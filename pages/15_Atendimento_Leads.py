@@ -94,7 +94,9 @@ else:
     df["DATA_CAPTURA_DT"] = pd.NaT
 
 if "data_com_corretor" in df.columns:
-    df["DATA_COM_CORRETOR_DT"] = pd.to_datetime(df["data_com_corretor"], errors="coerce")
+    df["DATA_COM_CORRETOR_DT"] = pd.to_datetime(
+        df["data_com_corretor"], errors="coerce"
+    )
 else:
     df["DATA_COM_CORRETOR_DT"] = pd.NaT
 
@@ -133,6 +135,7 @@ df["SLA_MINUTOS"] = np.where(
     (df["DATA_COM_CORRETOR_DT"] - df["DATA_CAPTURA_DT"]).dt.total_seconds() / 60,
     np.nan,
 )
+
 
 # Função utilitária para formatar minutos como "Xh YYmin"
 def format_minutes(total_min):
@@ -287,14 +290,14 @@ if qtde_leads_novos > 0:
         st.dataframe(df_novos_tab, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# VISÃO POR CORRETOR – Qtd. de leads e SLAs
+# VISÃO POR CORRETOR – Tabela Resumo + Tabela Detalhada
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 👥 Desempenho por corretor")
 
 df_cor = df_periodo.copy()
 
-# SLA inicial: tempo entre captura do lead e primeiro atendimento do corretor
+# SLA inicial: tempo entre captura do lead e primeiro atendimento
 df_cor["SLA_INICIAL_MIN"] = np.where(
     df_cor["DATA_COM_CORRETOR_DT"].notna(),
     (df_cor["DATA_COM_CORRETOR_DT"] - df_cor["DATA_CAPTURA_DT"])
@@ -302,7 +305,7 @@ df_cor["SLA_INICIAL_MIN"] = np.where(
     np.nan,
 )
 
-# SLA entre interações: tempo entre o primeiro atendimento e a última interação registrada
+# SLA entre interações: tempo entre o primeiro atendimento e a última interação
 df_cor["SLA_INTERACOES_MIN"] = np.where(
     df_cor["DATA_COM_CORRETOR_DT"].notna() & df_cor["DATA_ULT_INTERACAO_DT"].notna(),
     (df_cor["DATA_ULT_INTERACAO_DT"] - df_cor["DATA_COM_CORRETOR_DT"])
@@ -310,6 +313,7 @@ df_cor["SLA_INTERACOES_MIN"] = np.where(
     np.nan,
 )
 
+# ---------- TABELA RESUMO ----------
 df_resumo_corretor = df_cor.groupby("CORRETOR_EXIBICAO").agg(
     LEADS=("NOME_LEAD", "count"),
     ATENDIDOS=("ATENDIDO", "sum"),
@@ -317,7 +321,6 @@ df_resumo_corretor = df_cor.groupby("CORRETOR_EXIBICAO").agg(
     SLA_INTERACOES_MEDIO=("SLA_INTERACOES_MIN", "mean"),
 ).reset_index()
 
-# Formata SLAs em horas e minutos
 df_resumo_corretor["SLA_MEDIO"] = df_resumo_corretor["SLA_MEDIO"].apply(format_minutes)
 df_resumo_corretor["SLA_INTERACOES_MEDIO"] = df_resumo_corretor[
     "SLA_INTERACOES_MEDIO"
@@ -333,7 +336,52 @@ df_resumo_corretor = df_resumo_corretor.rename(
     }
 ).sort_values("Leads", ascending=False)
 
+st.subheader("📌 Resumo geral por corretor")
 st.dataframe(df_resumo_corretor, hide_index=True, use_container_width=True)
+
+# ---------- TABELA DETALHADA (COM NOMES) ----------
+st.subheader("📄 Lista completa de leads por corretor")
+
+df_detalhe = df_cor[
+    [
+        "CORRETOR_EXIBICAO",
+        "NOME_LEAD",
+        "TELEFONE_LEAD",
+        "DATA_CAPTURA_DT",
+        "DATA_COM_CORRETOR_DT",
+        "DATA_ULT_INTERACAO_DT",
+        "SLA_INICIAL_MIN",
+        "SLA_INTERACOES_MIN",
+    ]
+    + ([col_situacao] if col_situacao else [])
+    + ([col_etapa] if col_etapa else [])
+].copy()
+
+df_detalhe["DATA_CAPTURA_DT"] = df_detalhe["DATA_CAPTURA_DT"].apply(fmt_dt)
+df_detalhe["DATA_COM_CORRETOR_DT"] = df_detalhe["DATA_COM_CORRETOR_DT"].apply(fmt_dt)
+df_detalhe["DATA_ULT_INTERACAO_DT"] = df_detalhe[
+    "DATA_ULT_INTERACAO_DT"
+].apply(fmt_dt)
+
+df_detalhe["SLA_INICIAL"] = df_detalhe["SLA_INICIAL_MIN"].apply(format_minutes)
+df_detalhe["SLA_INTERACOES"] = df_detalhe["SLA_INTERACOES_MIN"].apply(format_minutes)
+
+df_detalhe = df_detalhe.rename(
+    columns={
+        "CORRETOR_EXIBICAO": "Corretor",
+        "NOME_LEAD": "Lead",
+        "TELEFONE_LEAD": "Telefone",
+        "DATA_CAPTURA_DT": "Captura",
+        "DATA_COM_CORRETOR_DT": "1º Contato",
+        "DATA_ULT_INTERACAO_DT": "Última Interação",
+        "SLA_INICIAL": "SLA inicial",
+        "SLA_INTERACOES": "SLA interações",
+        col_situacao: "Situação" if col_situacao else col_situacao,
+        col_etapa: "Etapa" if col_etapa else col_etapa,
+    }
+)
+
+st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
 
 # ---------------------------------------------------------
 # BUSCAR LEAD ESPECÍFICO
@@ -367,9 +415,9 @@ if not df_busca.empty:
     ].copy()
 
     df_busca_tab["DATA_CAPTURA_DT"] = df_busca_tab["DATA_CAPTURA_DT"].apply(fmt_dt)
-    df_busca_tab["DATA_COM_CORRETOR_DT"] = df_busca_tab["DATA_COM_CORRETOR_DT"].apply(
-        fmt_dt
-    )
+    df_busca_tab["DATA_COM_CORRETOR_DT"] = df_busca_tab[
+        "DATA_COM_CORRETOR_DT"
+    ].apply(fmt_dt)
     df_busca_tab["DATA_ULT_INTERACAO_DT"] = df_busca_tab[
         "DATA_ULT_INTERACAO_DT"
     ].apply(fmt_dt)

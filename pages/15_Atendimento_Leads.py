@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from io import BytesIO
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -44,6 +45,7 @@ df = df_leads.copy()
 # Mapa auxiliar para localizar colunas de forma case-insensitive
 lower_cols = {c.lower(): c for c in df.columns}
 
+
 def get_col(possiveis_nomes):
     """
     Recebe uma lista de nomes (em minúsculo) e devolve
@@ -53,6 +55,7 @@ def get_col(possiveis_nomes):
         if nome in lower_cols:
             return lower_cols[nome]
     return None
+
 
 # Nome do lead
 col_nome = get_col(
@@ -179,6 +182,7 @@ df["SLA_MINUTOS"] = np.where(
     np.nan,
 )
 
+
 # Funções utilitárias
 def format_minutes(total_min):
     if pd.isna(total_min):
@@ -190,10 +194,12 @@ def format_minutes(total_min):
         return f"{minutos} min"
     return f"{horas}h {minutos:02d} min"
 
+
 def fmt_dt(dt):
     if pd.isna(dt):
         return "-"
     return pd.to_datetime(dt).strftime("%d/%m/%Y %H:%M")
+
 
 # ---------------------------------------------------------
 # FILTROS LATERAIS
@@ -259,17 +265,35 @@ leads_nao_atendidos = int(qtde_leads_periodo - leads_atendidos)
 
 st.markdown("## 🧾 Visão geral do atendimento")
 
+# Leads novos = leads no período que ainda não foram encaminhados para corretor
 mask_leads_novos = (
     df_periodo["CORRETOR_EXIBICAO"].eq("SEM CORRETOR")
     & df_periodo["DATA_COM_CORRETOR_DT"].isna()
 )
 qtde_leads_novos = int(mask_leads_novos.sum())
 
+# SLA médio apenas dos atendidos
 sla_medio_min = df_periodo.loc[df_periodo["ATENDIDO"], "SLA_MINUTOS"].mean()
 
+# Leads perdidos no período (já calculado acima)
 qtde_leads_perdidos_periodo = int(qtde_leads_perdidos_periodo)
 
-c1, c2, c3, c4, c5, c6 = st.columns(6)
+# KPI – % de leads atendidos em até 15 minutos
+SLA_ALVO_MIN = 15
+if leads_atendidos > 0:
+    num_ate15 = int(
+        (
+            df_periodo["ATENDIDO"]
+            & (df_periodo["SLA_MINUTOS"] <= SLA_ALVO_MIN)
+        ).sum()
+    )
+    pct_ate15 = (num_ate15 / leads_atendidos) * 100
+else:
+    num_ate15 = 0
+    pct_ate15 = np.nan
+
+# 1ª linha de cards
+c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.metric("Leads no período", qtde_leads_periodo)
 with c2:
@@ -281,9 +305,12 @@ with c4:
         "SLA médio (leads atendidos)",
         format_minutes(sla_medio_min) if leads_atendidos > 0 else "-",
     )
-with c5:
+
+# 2ª linha de cards
+r2c1, r2c2, r2c3 = st.columns(3)
+with r2c1:
     st.metric("Leads perdidos no período", qtde_leads_perdidos_periodo)
-with c6:
+with r2c2:
     if qtde_leads_novos > 0:
         st.metric(
             "📥 Leads novos",
@@ -298,7 +325,17 @@ with c6:
             delta="Nenhum lead novo",
             delta_color="off",
         )
+with r2c3:
+    if leads_atendidos > 0:
+        st.metric(
+            "% atendidos em até 15 min",
+            f"{pct_ate15:.1f}%",
+            help=f"{num_ate15} de {leads_atendidos} leads atendidos no prazo alvo.",
+        )
+    else:
+        st.metric("% atendidos em até 15 min", "-", help="Nenhum lead atendido no período.")
 
+# Se houver leads novos, mostra um resumo logo abaixo
 if qtde_leads_novos > 0:
     df_leads_novos = df_periodo[mask_leads_novos].copy()
     st.warning(
@@ -323,13 +360,14 @@ if qtde_leads_novos > 0:
         st.dataframe(df_novos_tab, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# VISÃO POR CORRETOR – Resumo + Detalhe
+# VISÃO POR CORRETOR – Resumo com ranking de SLA
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 👥 Desempenho por corretor")
 
 df_cor = df_periodo.copy()
 
+# SLA inicial: tempo entre captura do lead e primeiro atendimento
 df_cor["SLA_INICIAL_MIN"] = np.where(
     df_cor["DATA_COM_CORRETOR_DT"].notna(),
     (df_cor["DATA_COM_CORRETOR_DT"] - df_cor["DATA_CAPTURA_DT"])
@@ -337,6 +375,7 @@ df_cor["SLA_INICIAL_MIN"] = np.where(
     np.nan,
 )
 
+# SLA entre interações: tempo entre o primeiro atendimento e a última interação
 df_cor["SLA_INTERACOES_MIN"] = np.where(
     df_cor["DATA_COM_CORRETOR_DT"].notna() & df_cor["DATA_ULT_INTERACAO_DT"].notna(),
     (df_cor["DATA_ULT_INTERACAO_DT"] - df_cor["DATA_COM_CORRETOR_DT"])
@@ -351,70 +390,69 @@ df_resumo_corretor = df_cor.groupby("CORRETOR_EXIBICAO", dropna=False).agg(
     SLA_INTERACOES_MEDIO=("SLA_INTERACOES_MIN", "mean"),
 ).reset_index()
 
-df_resumo_corretor["SLA_MEDIO"] = df_resumo_corretor["SLA_MEDIO"].apply(format_minutes)
-df_resumo_corretor["SLA_INTERACOES_MEDIO"] = df_resumo_corretor[
-    "SLA_INTERACOES_MEDIO"
-].apply(format_minutes)
+# Ranking de SLA (menor = melhor)
+df_resumo_corretor["Rank SLA"] = df_resumo_corretor["SLA_MEDIO"].rank(
+    method="min", ascending=True
+)
 
+# Renomeia colunas para exibição
 df_resumo_corretor = df_resumo_corretor.rename(
     columns={
         "CORRETOR_EXIBICAO": "Corretor",
         "LEADS": "Leads",
         "ATENDIDOS": "Leads atendidos",
-        "SLA_MEDIO": "SLA inicial médio",
-        "SLA_INTERACOES_MEDIO": "SLA entre interações (médio)",
+        "SLA_MEDIO": "SLA inicial médio (min)",
+        "SLA_INTERACOES_MEDIO": "SLA interações médio (min)",
     }
-).sort_values(["Leads", "Corretor"], ascending=[False, True])
+).sort_values(["Rank SLA", "Corretor"])
 
-st.subheader("📌 Resumo geral por corretor")
-st.dataframe(df_resumo_corretor, hide_index=True, use_container_width=True)
+# Função para colorir SLA estourado
+def color_sla(val):
+    if pd.isna(val):
+        return ""
+    if val > SLA_ALVO_MIN:
+        return "color: #ff4d4f; font-weight: bold;"
+    return ""
 
-st.subheader("📄 Lista completa de leads por corretor")
+# Styler para exibir minutos formatados + cor no SLA inicial
+styler_resumo = (
+    df_resumo_corretor.style.format(
+        {
+            "SLA inicial médio (min)": format_minutes,
+            "SLA interações médio (min)": format_minutes,
+        }
+    )
+    .applymap(color_sla, subset=["SLA inicial médio (min)"])
+)
 
-df_detalhe = df_cor[
-    [
-        "CORRETOR_EXIBICAO",
-        "NOME_LEAD",
-        "TELEFONE_LEAD",
-        "DATA_CAPTURA_DT",
-        "DATA_COM_CORRETOR_DT",
-        "DATA_ULT_INTERACAO_DT",
-        "SLA_INICIAL_MIN",
-        "SLA_INTERACOES_MIN",
-    ]
-    + ([col_situacao] if col_situacao else [])
-    + ([col_etapa] if col_etapa else [])
-].copy()
+st.subheader("📌 Resumo geral por corretor (com ranking de SLA)")
+st.dataframe(styler_resumo, hide_index=True, use_container_width=True)
 
-df_detalhe["DATA_CAPTURA_DT"] = df_detalhe["DATA_CAPTURA_DT"].apply(fmt_dt)
-df_detalhe["DATA_COM_CORRETOR_DT"] = df_detalhe["DATA_COM_CORRETOR_DT"].apply(fmt_dt)
-df_detalhe["DATA_ULT_INTERACAO_DT"] = df_detalhe[
-    "DATA_ULT_INTERACAO_DT"
-].apply(fmt_dt)
+# -------- Download Excel da visão por corretor --------
+buffer = BytesIO()
+df_resumo_export = df_resumo_corretor.copy()
+# Nas colunas de SLA, salva os valores em minutos (numérico) em vez da string formatada
+df_resumo_export["SLA inicial médio (min)"] = df_cor.groupby("CORRETOR_EXIBICAO")[
+    "SLA_INICIAL_MIN"
+].mean().values
+df_resumo_export["SLA interações médio (min)"] = df_cor.groupby("CORRETOR_EXIBICAO")[
+    "SLA_INTERACOES_MIN"
+].mean().values
 
-df_detalhe["SLA_INICIAL"] = df_detalhe["SLA_INICIAL_MIN"].apply(format_minutes)
-df_detalhe["SLA_INTERACOES"] = df_detalhe["SLA_INTERACOES_MIN"].apply(format_minutes)
+with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+    df_resumo_export.to_excel(
+        writer, index=False, sheet_name="Resumo_Atendimento_Corretor"
+    )
 
-rename_dict = {
-    "CORRETOR_EXIBICAO": "Corretor",
-    "NOME_LEAD": "Lead",
-    "TELEFONE_LEAD": "Telefone",
-    "DATA_CAPTURA_DT": "Captura",
-    "DATA_COM_CORRETOR_DT": "1º Contato",
-    "DATA_ULT_INTERACAO_DT": "Última Interação",
-    "SLA_INICIAL": "SLA inicial",
-    "SLA_INTERACOES": "SLA interações",
-}
-if col_situacao:
-    rename_dict[col_situacao] = "Situação"
-if col_etapa:
-    rename_dict[col_etapa] = "Etapa"
-
-df_detalhe = df_detalhe.rename(columns=rename_dict)
-
-df_detalhe = df_detalhe.sort_values(["Corretor", "Captura", "Lead"])
-
-st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
+st.download_button(
+    "⬇️ Baixar resumo por corretor (Excel)",
+    data=buffer.getvalue(),
+    file_name="resumo_atendimento_por_corretor.xlsx",
+    mime=(
+        "application/vnd.openxmlformats-officedocument."
+        "spreadsheetml.sheet"
+    ),
+)
 
 # ---------------------------------------------------------
 # BUSCAR LEAD ESPECÍFICO

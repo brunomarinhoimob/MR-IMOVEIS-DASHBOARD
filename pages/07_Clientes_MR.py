@@ -15,7 +15,7 @@ st.set_page_config(
 st.title("🧑‍💼 Página de Clientes – MR Imóveis")
 st.caption(
     "Busque clientes pelo nome (parcial) ou CPF e veja o histórico de análises, "
-    "aprovações, vendas e a situação atual."
+    "aprovações, vendas, situação atual e a última observação registrada."
 )
 
 # ---------------------------------------------------------
@@ -26,7 +26,7 @@ def limpar_para_data(serie):
     return dt.dt.date
 
 # ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA (MESMO DOS OUTROS APPS)
+# CONFIG: LINK DA PLANILHA
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
@@ -63,7 +63,7 @@ def carregar_dados():
         else:
             df[col] = "NÃO INFORMADO"
 
-    # STATUS BASE (mesma lógica das outras páginas)
+    # STATUS BASE
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -87,15 +87,21 @@ def carregar_dados():
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
-    # VGV (via OBSERVAÇÕES) – em REAL
+    # OBSERVAÇÕES – guarda texto original e extrai VGV numérico
     if "OBSERVAÇÕES" in df.columns:
+        df["OBSERVACOES_RAW"] = (
+            df["OBSERVAÇÕES"]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+        )
+        # VGV numérico (quando for número na observação)
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
     else:
+        df["OBSERVACOES_RAW"] = ""
         df["VGV"] = 0.0
 
-    # -------------------------------------------------
     # TENTA IDENTIFICAR COLUNA DE NOME E CPF DO CLIENTE
-    # -------------------------------------------------
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
@@ -111,7 +117,7 @@ def carregar_dados():
             col_cpf = c
             break
 
-    # Se não tiver nome/CPF na planilha, cria colunas vazias
+    # Nome base
     if col_nome is None:
         df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
     else:
@@ -119,10 +125,10 @@ def carregar_dados():
             df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
         )
 
+    # CPF base (apenas dígitos)
     if col_cpf is None:
         df["CPF_CLIENTE_BASE"] = ""
     else:
-        # deixa apenas dígitos para facilitar busca
         df["CPF_CLIENTE_BASE"] = (
             df[col_cpf]
             .fillna("")
@@ -147,7 +153,6 @@ st.sidebar.title("Busca de clientes 🔎")
 tipo_busca = st.sidebar.radio(
     "Buscar por:",
     ("Nome (parcial)", "CPF"),
-    horizontal=False,
 )
 
 termo = st.sidebar.text_input(
@@ -169,12 +174,10 @@ if termo.strip():
     termo_limpo = termo.strip().upper()
 
     if tipo_busca.startswith("Nome"):
-        # busca parcial no nome
         df_resultado = df[
             df["NOME_CLIENTE_BASE"].str.contains(termo_limpo, na=False)
         ].copy()
     else:
-        # busca por CPF – deixa só dígitos
         termo_cpf = "".join(ch for ch in termo if ch.isdigit())
         df_resultado = df[
             df["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)
@@ -188,7 +191,7 @@ if not termo.strip():
 elif df_resultado.empty:
     st.warning("Nenhum cliente encontrado com esse critério de busca.")
 else:
-    # Agrupa por cliente (nome + CPF) para resumir histórico
+    # Chave única por cliente
     df_resultado["CHAVE_CLIENTE"] = (
         df_resultado["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
         + " | "
@@ -218,31 +221,55 @@ else:
             ULT_STATUS=("STATUS_BASE", lambda x: x.iloc[-1] if len(x) > 0 else ""),
             ULT_DATA=("DIA", lambda x: x.max()),
         )
-        .reset_index(drop=True)
+        .reset_index()
     )
 
     st.markdown(
         f"### 🔎 Resultado da busca – {len(resumo)} cliente(s) encontrado(s)"
     )
 
-    # Mostra primeiro uma tabela simples (para visão geral)
+    # Tabela geral
     st.markdown("#### 📋 Visão geral")
     st.dataframe(
         resumo[["NOME", "CPF", "ULT_STATUS", "ULT_DATA", "ANALISES", "APROVACOES", "VENDAS", "VGV"]]
         .sort_values(["VENDAS", "VGV"], ascending=False)
-        .style.format(
-            {
-                "VGV": "R$ {:,.2f}".format,
-            }
-        ),
+        .style.format({"VGV": "R$ {:,.2f}".format}),
         use_container_width=True,
         hide_index=True,
     )
 
     st.markdown("#### 💳 Detalhes por cliente (cards)")
 
+    # Função para checar se uma observação é numérica
+    def observacao_e_numero(txt: str) -> bool:
+        if not txt:
+            return False
+        t = (
+            txt.upper()
+            .replace("R$", "")
+            .replace(".", "")
+            .replace(",", "")
+            .replace(" ", "")
+        )
+        # se sobrar só dígito, consideramos número
+        return t.isdigit()
+
     # Cards para cada cliente
     for _, row in resumo.sort_values(["VENDAS", "VGV"], ascending=False).iterrows():
+        chave = row["CHAVE_CLIENTE"]
+        df_cli = df_resultado[df_resultado["CHAVE_CLIENTE"] == chave].copy()
+
+        # Ordena por data para pegar a última observação
+        df_cli = df_cli.sort_values("DIA")
+
+        # Pega somente observações não numéricas
+        obs_validas = [
+            obs for obs in df_cli["OBSERVACOES_RAW"].fillna("")
+            if obs and not observacao_e_numero(obs)
+        ]
+
+        ultima_obs = obs_validas[-1] if obs_validas else ""
+
         with st.container():
             st.markdown("---")
             st.markdown(f"##### 👤 {row['NOME']}")
@@ -254,6 +281,8 @@ else:
                 else:
                     st.write("**CPF:** não informado")
                 st.write(f"**Situação atual:** `{row['ULT_STATUS'] or 'NÃO INFORMADO'}`")
+                if ultima_obs:
+                    st.write(f"**Última observação:** {ultima_obs}")
             with col_top2:
                 if pd.notna(row["ULT_DATA"]):
                     st.write(f"**Última movimentação:** {row['ULT_DATA'].strftime('%d/%m/%Y')}")

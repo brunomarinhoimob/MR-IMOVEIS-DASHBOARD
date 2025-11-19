@@ -163,7 +163,16 @@ if df_periodo.empty:
 # FUNÇÕES AUXILIARES DO FUNIL
 # ---------------------------------------------------------
 def conta_analises(s):
+    """Análises totais (EM + RE) – volume."""
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
+
+def conta_analises_base(s):
+    """Análises para base de conversão – SOMENTE EM ANÁLISE."""
+    return (s == "EM ANÁLISE").sum()
+
+def conta_reanalises(s):
+    """Quantidade de REANÁLISE."""
+    return (s == "REANÁLISE").sum()
 
 def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
@@ -176,44 +185,58 @@ def conta_vendas(s):
 # ---------------------------------------------------------
 st.markdown("## 🏢 Funil Geral da Imobiliária")
 
-analises_total = conta_analises(df_periodo["STATUS_BASE"])
+# Contagens gerais (respeitando o filtro de data)
+analises_em = conta_analises_base(df_periodo["STATUS_BASE"])    # só EM ANÁLISE
+reanalises_total = conta_reanalises(df_periodo["STATUS_BASE"])  # só REANÁLISE
+analises_total = conta_analises(df_periodo["STATUS_BASE"])      # EM + RE (volume)
 aprov_total = conta_aprovacoes(df_periodo["STATUS_BASE"])
 vendas_total = conta_vendas(df_periodo["STATUS_BASE"])
 vgv_total = df_periodo["VGV"].sum()
 
-taxa_aprov_analise = (aprov_total / analises_total * 100) if analises_total > 0 else 0
-taxa_venda_analise = (vendas_total / analises_total * 100) if analises_total > 0 else 0
-taxa_venda_aprov = (vendas_total / aprov_total * 100) if aprov_total > 0 else 0
+taxa_aprov_analise = (
+    aprov_total / analises_em * 100 if analises_em > 0 else 0
+)
+taxa_venda_analise = (
+    vendas_total / analises_em * 100 if analises_em > 0 else 0
+)
+taxa_venda_aprov = (
+    vendas_total / aprov_total * 100 if aprov_total > 0 else 0
+)
 
-col1, col2, col3, col4 = st.columns(4)
+# Cards principais – separando ANÁLISE x REANÁLISE
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
-    st.metric("Análises (EM + RE)", analises_total)
+    st.metric("Análises (só EM)", analises_em)
 with col2:
-    st.metric("Aprovações", aprov_total)
+    st.metric("Reanálises", reanalises_total)
 with col3:
-    st.metric("Vendas (Total)", vendas_total)
+    st.metric("Análises (EM + RE)", analises_total)
 with col4:
+    st.metric("Aprovações", aprov_total)
+with col5:
+    st.metric("Vendas (Total)", vendas_total)
+
+col_vgv, col_t1, col_t2, col_t3 = st.columns(4)
+with col_vgv:
     st.metric(
         "VGV Total",
         f"R$ {vgv_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
     )
-
-col5, col6, col7 = st.columns(3)
-with col5:
-    st.metric("Taxa Aprov./Análises", f"{taxa_aprov_analise:.1f}%")
-with col6:
-    st.metric("Taxa Vendas/Análises", f"{taxa_venda_analise:.1f}%")
-with col7:
+with col_t1:
+    st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_analise:.1f}%")
+with col_t2:
+    st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analise:.1f}%")
+with col_t3:
     st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
-# Tabela resumindo o funil geral
+# Tabela resumindo o funil geral (base de conversão só EM)
 df_funil_geral = pd.DataFrame(
     {
-        "Etapa": ["Análises", "Aprovações", "Vendas"],
-        "Quantidade": [analises_total, aprov_total, vendas_total],
+        "Etapa": ["Análises (só EM)", "Aprovações", "Vendas"],
+        "Quantidade": [analises_em, aprov_total, vendas_total],
         "Conversão da etapa anterior (%)": [
-            100.0 if analises_total > 0 else 0.0,
-            taxa_aprov_analise if analises_total > 0 else 0.0,
+            100.0 if analises_em > 0 else 0.0,
+            taxa_aprov_analise if analises_em > 0 else 0.0,
             taxa_venda_aprov if aprov_total > 0 else 0.0,
         ],
     }
@@ -238,7 +261,11 @@ with col_chart_f:
         .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
         .encode(
             x=alt.X("Quantidade:Q", title="Quantidade"),
-            y=alt.Y("Etapa:N", sort=["Análises", "Aprovações", "Vendas"], title="Etapa"),
+            y=alt.Y(
+                "Etapa:N",
+                sort=["Análises (só EM)", "Aprovações", "Vendas"],
+                title="Etapa",
+            ),
             tooltip=[
                 "Etapa",
                 "Quantidade",
@@ -255,6 +282,7 @@ with col_chart_f:
 
 # ---------------------------------------------------------
 # PLANEJAMENTO DA IMOBILIÁRIA (ÚLTIMOS 3 MESES)
+# + SITUAÇÃO ATUAL DO PERÍODO FILTRADO
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📈 Planejamento de Vendas da Imobiliária (base últimos 3 meses)")
@@ -279,20 +307,25 @@ else:
                 f"até {ref_date.date().strftime('%d/%m/%Y')})."
             )
         else:
-            analises_3m = conta_analises(df_3m["STATUS_BASE"])
+            analises_3m_base = conta_analises_base(df_3m["STATUS_BASE"])  # só EM ANÁLISE
             aprov_3m = conta_aprovacoes(df_3m["STATUS_BASE"])
             vendas_3m = conta_vendas(df_3m["STATUS_BASE"])
 
             if vendas_3m > 0:
-                media_analise_por_venda_3m = analises_3m / vendas_3m
-                media_aprov_por_venda_3m = aprov_3m / vendas_3m if aprov_3m > 0 else 0
+                media_analise_por_venda_3m = (
+                    analises_3m_base / vendas_3m if analises_3m_base > 0 else 0
+                )
+                media_aprov_por_venda_3m = (
+                    aprov_3m / vendas_3m if aprov_3m > 0 else 0
+                )
             else:
                 media_analise_por_venda_3m = 0
                 media_aprov_por_venda_3m = 0
 
+            # Métricas históricas (3 meses)
             c_hist1, c_hist2, c_hist3 = st.columns(3)
             with c_hist1:
-                st.metric("Análises (últimos 3 meses)", analises_3m)
+                st.metric("Análises (3m – só EM)", analises_3m_base)
             with c_hist2:
                 st.metric("Aprovações (últimos 3 meses)", aprov_3m)
             with c_hist3:
@@ -301,7 +334,7 @@ else:
             c_hist4, c_hist5 = st.columns(2)
             with c_hist4:
                 st.metric(
-                    "Média de ANÁLISES por venda (3m)",
+                    "Média de ANÁLISES por venda (3m, só EM)",
                     f"{media_analise_por_venda_3m:.1f}" if vendas_3m > 0 else "—",
                 )
             with c_hist5:
@@ -315,6 +348,21 @@ else:
                 f"até {ref_date.date().strftime('%d/%m/%Y')}."
             )
 
+            # Situação atual no período selecionado (pedido: qtas análises já foram feitas no mês/ filtro)
+            st.markdown("### 📌 Situação atual no período filtrado")
+            c_at1, c_at2 = st.columns(2)
+            with c_at1:
+                st.metric(
+                    "Análises já feitas no período (só EM)",
+                    analises_em
+                )
+            with c_at2:
+                st.metric(
+                    "Vendas já realizadas no período",
+                    vendas_total
+                )
+
+            # Planejamento de metas
             st.markdown("### 🎯 Quantas análises/aprovações preciso para bater a meta de vendas da imobiliária?")
 
             vendas_planejadas = st.number_input(
@@ -366,7 +414,9 @@ st.markdown("## 👥 Funil por Equipe (comparativo)")
 rank_eq_funil = (
     df_periodo.groupby("EQUIPE")
     .agg(
-        ANALISES=("STATUS_BASE", conta_analises),
+        ANALISES=("STATUS_BASE", conta_analises),           # EM + RE (volume)
+        ANALISES_BASE=("STATUS_BASE", conta_analises_base), # só EM ANÁLISE (conversão)
+        REANALISES=("STATUS_BASE", conta_reanalises),       # só REANÁLISE
         APROVACOES=("STATUS_BASE", conta_aprovacoes),
         VENDAS=("STATUS_BASE", conta_vendas),
         VGV=("VGV", "sum"),
@@ -385,13 +435,13 @@ if rank_eq_funil.empty:
     st.info("Nenhuma equipe com movimentação no período selecionado.")
 else:
     rank_eq_funil["TAXA_APROV_ANALISES"] = np.where(
-        rank_eq_funil["ANALISES"] > 0,
-        rank_eq_funil["APROVACOES"] / rank_eq_funil["ANALISES"] * 100,
+        rank_eq_funil["ANALISES_BASE"] > 0,
+        rank_eq_funil["APROVACOES"] / rank_eq_funil["ANALISES_BASE"] * 100,
         0,
     )
     rank_eq_funil["TAXA_VENDAS_ANALISES"] = np.where(
-        rank_eq_funil["ANALISES"] > 0,
-        rank_eq_funil["VENDAS"] / rank_eq_funil["ANALISES"] * 100,
+        rank_eq_funil["ANALISES_BASE"] > 0,
+        rank_eq_funil["VENDAS"] / rank_eq_funil["ANALISES_BASE"] * 100,
         0,
     )
     rank_eq_funil["TAXA_VENDAS_APROV"] = np.where(
@@ -429,18 +479,20 @@ else:
                 y=alt.Y("EQUIPE:N", sort="-x", title="Equipe"),
                 tooltip=[
                     "EQUIPE",
-                    "ANALISES",
+                    alt.Tooltip("ANALISES_BASE:Q", title="Análises (só EM)"),
+                    alt.Tooltip("REANALISES:Q", title="Reanálises"),
+                    alt.Tooltip("ANALISES:Q", title="Análises (EM + RE)"),
                     "APROVACOES",
                     "VENDAS",
                     alt.Tooltip("VGV:Q", title="VGV"),
                     alt.Tooltip(
                         "TAXA_APROV_ANALISES:Q",
-                        title="% Aprov./Análises",
+                        title="% Aprov./Análises (só EM)",
                         format=".1f",
                     ),
                     alt.Tooltip(
                         "TAXA_VENDAS_ANALISES:Q",
-                        title="% Vendas/Análises",
+                        title="% Vendas/Análises (só EM)",
                         format=".1f",
                     ),
                     alt.Tooltip(
@@ -468,36 +520,49 @@ else:
     if df_eq.empty:
         st.warning(f"A equipe **{equipe_sel}** não possui registros no período selecionado.")
     else:
-        analises_eq = conta_analises(df_eq["STATUS_BASE"])
+        analises_eq_em = conta_analises_base(df_eq["STATUS_BASE"])   # só EM
+        reanalises_eq = conta_reanalises(df_eq["STATUS_BASE"])       # só RE
+        analises_eq_total = conta_analises(df_eq["STATUS_BASE"])     # EM + RE
         aprov_eq = conta_aprovacoes(df_eq["STATUS_BASE"])
         vendas_eq = conta_vendas(df_eq["STATUS_BASE"])
         vgv_eq = df_eq["VGV"].sum()
 
-        taxa_aprov_eq = (aprov_eq / analises_eq * 100) if analises_eq > 0 else 0
-        taxa_venda_analises_eq = (vendas_eq / analises_eq * 100) if analises_eq > 0 else 0
-        taxa_venda_aprov_eq = (vendas_eq / aprov_eq * 100) if aprov_eq > 0 else 0
+        taxa_aprov_eq = (
+            aprov_eq / analises_eq_em * 100 if analises_eq_em > 0 else 0
+        )
+        taxa_venda_analises_eq = (
+            vendas_eq / analises_eq_em * 100 if analises_eq_em > 0 else 0
+        )
+        taxa_venda_aprov_eq = (
+            vendas_eq / aprov_eq * 100 if aprov_eq > 0 else 0
+        )
 
         st.markdown(f"### Equipe: **{equipe_sel}**")
 
-        c1, c2, c3, c4 = st.columns(4)
+        # Cards separando análise x reanálise na equipe
+        c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
-            st.metric("Análises (EM + RE)", analises_eq)
+            st.metric("Análises (só EM)", analises_eq_em)
         with c2:
-            st.metric("Aprovações", aprov_eq)
+            st.metric("Reanálises", reanalises_eq)
         with c3:
-            st.metric("Vendas (Total)", vendas_eq)
+            st.metric("Análises (EM + RE)", analises_eq_total)
         with c4:
-            st.metric(
-                "VGV da equipe",
-                f"R$ {vgv_eq:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-            )
-
-        c5, c6, c7 = st.columns(3)
+            st.metric("Aprovações", aprov_eq)
         with c5:
-            st.metric("Taxa Aprov./Análises", f"{taxa_aprov_eq:.1f}%")
+            st.metric("Vendas (Total)", vendas_eq)
+
+        c6, c7, c8 = st.columns(3)
         with c6:
-            st.metric("Taxa Vendas/Análises", f"{taxa_venda_analises_eq:.1f}%")
+            st.metric("VGV da equipe",
+                      f"R$ {vgv_eq:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
         with c7:
+            st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_eq:.1f}%")
+        with c8:
+            st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analises_eq:.1f}%")
+
+        c9, = st.columns(1)
+        with c9:
             st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov_eq:.1f}%")
 
         # ---------------------------------------------
@@ -528,12 +593,15 @@ else:
                         f"até {ref_date_eq.date().strftime('%d/%m/%Y')})."
                     )
                 else:
-                    analises_eq_3m = conta_analises(df_eq_3m["STATUS_BASE"])
+                    analises_eq_3m_base = conta_analises_base(df_eq_3m["STATUS_BASE"])  # só EM ANÁLISE
                     aprov_eq_3m = conta_aprovacoes(df_eq_3m["STATUS_BASE"])
                     vendas_eq_3m = conta_vendas(df_eq_3m["STATUS_BASE"])
 
                     if vendas_eq_3m > 0:
-                        media_analise_por_venda_eq = analises_eq_3m / vendas_eq_3m
+                        media_analise_por_venda_eq = (
+                            analises_eq_3m_base / vendas_eq_3m
+                            if analises_eq_3m_base > 0 else 0
+                        )
                         media_aprov_por_venda_eq = (
                             aprov_eq_3m / vendas_eq_3m if aprov_eq_3m > 0 else 0
                         )
@@ -543,7 +611,7 @@ else:
 
                     h1, h2, h3 = st.columns(3)
                     with h1:
-                        st.metric("Análises (3m – equipe)", analises_eq_3m)
+                        st.metric("Análises (3m – só EM)", analises_eq_3m_base)
                     with h2:
                         st.metric("Aprovações (3m – equipe)", aprov_eq_3m)
                     with h3:
@@ -552,7 +620,7 @@ else:
                     h4, h5 = st.columns(2)
                     with h4:
                         st.metric(
-                            "Média de ANÁLISES por venda (equipe, 3m)",
+                            "Média de ANÁLISES por venda (equipe, 3m, só EM)",
                             f"{media_analise_por_venda_eq:.1f}" if vendas_eq_3m > 0 else "—",
                         )
                     with h5:

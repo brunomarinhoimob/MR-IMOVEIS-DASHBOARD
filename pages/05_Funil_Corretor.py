@@ -109,7 +109,16 @@ if df.empty:
 # FUNÇÕES AUXILIARES DO FUNIL
 # ---------------------------------------------------------
 def conta_analises(s):
+    """Análises totais (EM + RE) – volume."""
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
+
+def conta_analises_base(s):
+    """Análises para base de conversão – SOMENTE EM ANÁLISE."""
+    return (s == "EM ANÁLISE").sum()
+
+def conta_reanalises(s):
+    """Quantidade de REANÁLISE."""
+    return (s == "REANÁLISE").sum()
 
 def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
@@ -183,44 +192,59 @@ if df_cor_periodo.empty:
         f"O corretor **{corretor_sel}** não possui registros no período selecionado."
     )
 else:
-    analises_cor = conta_analises(df_cor_periodo["STATUS_BASE"])
+    # Separando análises
+    analises_em_cor = conta_analises_base(df_cor_periodo["STATUS_BASE"])   # só EM
+    reanalises_cor = conta_reanalises(df_cor_periodo["STATUS_BASE"])       # só RE
+    analises_total_cor = conta_analises(df_cor_periodo["STATUS_BASE"])     # EM + RE
+
     aprov_cor = conta_aprovacoes(df_cor_periodo["STATUS_BASE"])
     vendas_cor = conta_vendas(df_cor_periodo["STATUS_BASE"])
     vgv_cor = df_cor_periodo["VGV"].sum()
 
-    taxa_aprov_cor = (aprov_cor / analises_cor * 100) if analises_cor > 0 else 0
-    taxa_venda_analises_cor = (vendas_cor / analises_cor * 100) if analises_cor > 0 else 0
-    taxa_venda_aprov_cor = (vendas_cor / aprov_cor * 100) if aprov_cor > 0 else 0
+    taxa_aprov_cor = (aprov_cor / analises_em_cor * 100) if analises_em_cor > 0 else 0
+    taxa_venda_analises_cor = (
+        vendas_cor / analises_em_cor * 100
+    ) if analises_em_cor > 0 else 0
+    taxa_venda_aprov_cor = (
+        vendas_cor / aprov_cor * 100
+    ) if aprov_cor > 0 else 0
 
-    c1, c2, c3, c4 = st.columns(4)
+    # Cards principais – separando análise x reanálise
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        st.metric("Análises (EM + RE)", analises_cor)
+        st.metric("Análises (só EM)", analises_em_cor)
     with c2:
-        st.metric("Aprovações", aprov_cor)
+        st.metric("Reanálises", reanalises_cor)
     with c3:
-        st.metric("Vendas (Total)", vendas_cor)
+        st.metric("Análises (EM + RE)", analises_total_cor)
     with c4:
+        st.metric("Aprovações", aprov_cor)
+    with c5:
+        st.metric("Vendas (Total)", vendas_cor)
+
+    c6, c7, c8 = st.columns(3)
+    with c6:
         st.metric(
             "VGV do corretor (período)",
             f"R$ {vgv_cor:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
         )
-
-    c5, c6, c7 = st.columns(3)
-    with c5:
-        st.metric("Taxa Aprov./Análises", f"{taxa_aprov_cor:.1f}%")
-    with c6:
-        st.metric("Taxa Vendas/Análises", f"{taxa_venda_analises_cor:.1f}%")
     with c7:
+        st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_cor:.1f}%")
+    with c8:
+        st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analises_cor:.1f}%")
+
+    c9, = st.columns(1)
+    with c9:
         st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov_cor:.1f}%")
 
-    # Tabela do funil do corretor
+    # Tabela do funil do corretor (usando só EM como base)
     df_funil_cor = pd.DataFrame(
         {
-            "Etapa": ["Análises", "Aprovações", "Vendas"],
-            "Quantidade": [analises_cor, aprov_cor, vendas_cor],
+            "Etapa": ["Análises (só EM)", "Aprovações", "Vendas"],
+            "Quantidade": [analises_em_cor, aprov_cor, vendas_cor],
             "Conversão da etapa anterior (%)": [
-                100.0 if analises_cor > 0 else 0.0,
-                taxa_aprov_cor if analises_cor > 0 else 0.0,
+                100.0 if analises_em_cor > 0 else 0.0,
+                taxa_aprov_cor if analises_em_cor > 0 else 0.0,
                 taxa_venda_aprov_cor if aprov_cor > 0 else 0.0,
             ],
         }
@@ -245,7 +269,11 @@ else:
             .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
             .encode(
                 x=alt.X("Quantidade:Q", title="Quantidade"),
-                y=alt.Y("Etapa:N", sort=["Análises", "Aprovações", "Vendas"], title="Etapa"),
+                y=alt.Y(
+                    "Etapa:N",
+                    sort=["Análises (só EM)", "Aprovações", "Vendas"],
+                    title="Etapa",
+                ),
                 tooltip=[
                     "Etapa",
                     "Quantidade",
@@ -292,12 +320,15 @@ else:
                 f"até {ref_date_cor.date().strftime('%d/%m/%Y')})."
             )
         else:
-            analises_cor_3m = conta_analises(df_cor_3m["STATUS_BASE"])
+            analises_cor_3m_base = conta_analises_base(df_cor_3m["STATUS_BASE"])  # só EM
             aprov_cor_3m = conta_aprovacoes(df_cor_3m["STATUS_BASE"])
             vendas_cor_3m = conta_vendas(df_cor_3m["STATUS_BASE"])
 
             if vendas_cor_3m > 0:
-                media_analise_por_venda_cor = analises_cor_3m / vendas_cor_3m
+                media_analise_por_venda_cor = (
+                    analises_cor_3m_base / vendas_cor_3m
+                    if analises_cor_3m_base > 0 else 0
+                )
                 media_aprov_por_venda_cor = (
                     aprov_cor_3m / vendas_cor_3m if aprov_cor_3m > 0 else 0
                 )
@@ -307,7 +338,7 @@ else:
 
             h1, h2, h3 = st.columns(3)
             with h1:
-                st.metric("Análises (3m – corretor)", analises_cor_3m)
+                st.metric("Análises (3m – só EM)", analises_cor_3m_base)
             with h2:
                 st.metric("Aprovações (3m – corretor)", aprov_cor_3m)
             with h3:
@@ -316,7 +347,7 @@ else:
             h4, h5 = st.columns(2)
             with h4:
                 st.metric(
-                    "Média de ANÁLISES por venda (3m)",
+                    "Média de ANÁLISES por venda (3m, só EM)",
                     f"{media_analise_por_venda_cor:.1f}" if vendas_cor_3m > 0 else "—",
                 )
             with h5:

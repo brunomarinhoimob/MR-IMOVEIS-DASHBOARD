@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import date
+from datetime import date, datetime
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -102,34 +102,38 @@ st.sidebar.title("Filtros 🔎")
 dias_validos = pd.Series(df["DIA"].dropna())
 
 if not dias_validos.empty:
-    data_min = dias_validos.min()
     data_max = dias_validos.max()
 else:
-    hoje = date.today()
-    data_min = hoje
-    data_max = hoje
+    data_max = date.today()
 
-# -------------------------------
-# 🟩 **DATA FIXA ENTRE PÁGINAS**
-# -------------------------------
+# -------------------------------------------
+# 🔥 NOVO FILTRO AUTOMÁTICO = MÊS ATUAL
+# -------------------------------------------
+primeiro_dia_mes = date(date.today().year, date.today().month, 1)
+ultimo_dia = date.today()
+
+# Guarda na sessão
 if "periodo_filtro" not in st.session_state:
-    st.session_state["periodo_filtro"] = (data_min, data_max)
+    st.session_state["periodo_filtro"] = (primeiro_dia_mes, ultimo_dia)
 
+# Campo de seleção usando o padrão automático
 periodo = st.sidebar.date_input(
-    "Período",
+    "Período (padrão = mês atual)",
     value=st.session_state["periodo_filtro"],
-    min_value=data_min,
-    max_value=data_max,
+    min_value=primeiro_dia_mes,
+    max_value=ultimo_dia,
 )
 
+# Atualiza sessão
 st.session_state["periodo_filtro"] = periodo
-# -------------------------------
 
+# Converte tupla → datas
 if isinstance(periodo, tuple):
     data_ini, data_fim = periodo
 else:
-    data_ini, data_fim = data_min, data_max
+    data_ini, data_fim = primeiro_dia_mes, ultimo_dia
 
+# Filtro de equipe
 lista_equipes = sorted(df["EQUIPE"].dropna().unique())
 equipe_sel = st.sidebar.selectbox("Equipe (opcional)", ["Todas"] + lista_equipes)
 
@@ -204,7 +208,6 @@ rank_cor = rank_cor.sort_values(["VENDAS", "VGV"], ascending=False)
 # ---------------------------------------------------------
 # EXIBIÇÃO — TABELA EM CIMA, GRÁFICO EMBAIXO
 # ---------------------------------------------------------
-
 st.markdown("#### 📋 Tabela detalhada do ranking por corretor")
 st.dataframe(
     rank_cor.style.format(

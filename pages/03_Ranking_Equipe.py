@@ -8,16 +8,24 @@ from datetime import date
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Ranking por Corretor – MR Imóveis",
-    page_icon="🏆",
+    page_title="Ranking por Equipe – MR Imóveis",
+    page_icon="👥",
     layout="wide",
 )
 
-st.title("🏆 Ranking por Corretor – MR Imóveis")
+st.title("👥 Ranking por Equipe – MR Imóveis")
+
 st.caption(
-    "Filtre o período e (opcionalmente) uma equipe para ver o ranking de corretores "
+    "Filtre o período para ver o ranking das equipes "
     "em análises, aprovações, vendas e VGV."
 )
+
+# ---------------------------------------------------------
+# CONFIG: LINK DA PLANILHA
+# ---------------------------------------------------------
+SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+GID_ANALISES = "1574157905"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
 # ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
@@ -27,14 +35,7 @@ def limpar_para_data(serie):
     return dt.dt.date
 
 # ---------------------------------------------------------
-# LINK DA PLANILHA
-# ---------------------------------------------------------
-SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-GID_ANALISES = "1574157905"
-CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
-
-# ---------------------------------------------------------
-# CARREGAR DADOS
+# CARREGAR E PREPARAR DADOS
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -42,6 +43,7 @@ def carregar_dados():
 
     df.columns = [c.strip().upper() for c in df.columns]
 
+    # DATA / DIA
     if "DATA" in df.columns:
         df["DIA"] = limpar_para_data(df["DATA"])
     elif "DIA" in df.columns:
@@ -49,6 +51,7 @@ def carregar_dados():
     else:
         df["DIA"] = pd.NaT
 
+    # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
         if col in df.columns:
             df[col] = (
@@ -61,6 +64,7 @@ def carregar_dados():
         else:
             df[col] = "NÃO INFORMADO"
 
+    # SITUAÇÃO BASE
     possiveis_cols_situacao = [
         "SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS",
         "SITUACAO", "SITUACAO ATUAL"
@@ -81,6 +85,7 @@ def carregar_dados():
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
+    # VGV
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
     else:
@@ -96,94 +101,73 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# 📌 FILTRO DE DATA FIXO ENTRE PÁGINAS (session_state)
+# FILTRO DE PERÍODO (COM SESSION_STATE)
 # ---------------------------------------------------------
+st.sidebar.title("Filtros 🔎")
 
 dias_validos = pd.Series(df["DIA"].dropna())
+
 if not dias_validos.empty:
-    data_min_base = dias_validos.min()
-    data_max_base = dias_validos.max()
+    data_min = dias_validos.min()
+    data_max = dias_validos.max()
 else:
     hoje = date.today()
-    data_min_base = hoje
-    data_max_base = hoje
+    data_min = hoje
+    data_max = hoje
 
-# Se não existir no session_state, cria uma vez só
-if "periodo_corretor" not in st.session_state:
-    st.session_state["periodo_corretor"] = (data_min_base, data_max_base)
+# guarda o período no session_state para não perder ao trocar de página
+if "rank_eq_periodo" not in st.session_state:
+    st.session_state["rank_eq_periodo"] = (data_min, data_max)
 
-# Widget usa o valor do session_state
 periodo = st.sidebar.date_input(
     "Período",
-    value=st.session_state["periodo_corretor"],
-    min_value=data_min_base,
-    max_value=data_max_base,
+    value=st.session_state["rank_eq_periodo"],
+    min_value=data_min,
+    max_value=data_max,
 )
 
-# Atualiza session_state sempre que usuário mudar
-st.session_state["periodo_corretor"] = periodo
-
-# Extrai datas
 if isinstance(periodo, tuple):
     data_ini, data_fim = periodo
+    st.session_state["rank_eq_periodo"] = (data_ini, data_fim)
 else:
-    data_ini, data_fim = data_min_base, data_max_base
+    data_ini, data_fim = data_min, data_max
+    st.session_state["rank_eq_periodo"] = (data_ini, data_fim)
 
 # ---------------------------------------------------------
-# FILTRO DE EQUIPE
-# ---------------------------------------------------------
-lista_equipes = sorted(df["EQUIPE"].dropna().unique())
-
-if "equipe_corretor" not in st.session_state:
-    st.session_state["equipe_corretor"] = "Todas"
-
-equipe_sel = st.sidebar.selectbox(
-    "Equipe (opcional)",
-    ["Todas"] + lista_equipes,
-    index=(["Todas"] + lista_equipes).index(st.session_state["equipe_corretor"])
-)
-
-st.session_state["equipe_corretor"] = equipe_sel
-
-# ---------------------------------------------------------
-# APLICA FILTROS
+# APLICA FILTRO DE DATA
 # ---------------------------------------------------------
 df_periodo = df.copy()
 dia_series_all = limpar_para_data(df_periodo["DIA"])
 mask_data_all = (dia_series_all >= data_ini) & (dia_series_all <= data_fim)
 df_periodo = df_periodo[mask_data_all]
 
-if equipe_sel != "Todas":
-    df_periodo = df_periodo[df_periodo["EQUIPE"] == equipe_sel]
-
 registros_filtrados = len(df_periodo)
 
 st.caption(
     f"Período filtrado: **{data_ini.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim.strftime('%d/%m/%Y')}** • "
-    f"Registros considerados: **{registros_filtrados}**"
+    f"**{data_fim.strftime('%d/%m/%Y')}** • Registros: **{registros_filtrados}**"
 )
-if equipe_sel != "Todas":
-    st.caption(f"Equipe filtrada: **{equipe_sel}**")
 
 if df_periodo.empty:
-    st.warning("Não há registros para o período / filtros selecionados.")
+    st.warning("Nenhum registro encontrado para o período filtrado.")
     st.stop()
 
 # ---------------------------------------------------------
-# RANKING
+# AGRUPAMENTO POR EQUIPE
 # ---------------------------------------------------------
+st.markdown("### 📊 Resumo geral por equipe")
+
 def conta_analises(s):
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
-
-def conta_aprovacoes(s):
-    return (s == "APROVADO").sum()
 
 def conta_vendas(s):
     return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
 
-rank_cor = (
-    df_periodo.groupby("CORRETOR")
+def conta_aprovacoes(s):
+    return (s == "APROVADO").sum()
+
+rank_eq = (
+    df_periodo.groupby("EQUIPE")
     .agg(
         ANALISES=("STATUS_BASE", conta_analises),
         APROVACOES=("STATUS_BASE", conta_aprovacoes),
@@ -193,32 +177,65 @@ rank_cor = (
     .reset_index()
 )
 
-rank_cor = rank_cor[
-    (rank_cor["ANALISES"] > 0)
-    | (rank_cor["APROVACOES"] > 0)
-    | (rank_cor["VENDAS"] > 0)
-    | (rank_cor["VGV"] > 0)
+rank_eq = rank_eq[
+    (rank_eq["ANALISES"] > 0)
+    | (rank_eq["APROVACOES"] > 0)
+    | (rank_eq["VENDAS"] > 0)
+    | (rank_eq["VGV"] > 0)
 ]
 
-rank_cor["TAXA_APROV_ANALISES"] = np.where(
-    rank_cor["ANALISES"] > 0,
-    rank_cor["APROVACOES"] / rank_cor["ANALISES"] * 100,
-    0,
-)
-rank_cor["TAXA_VENDAS_ANALISES"] = np.where(
-    rank_cor["ANALISES"] > 0,
-    rank_cor["VENDAS"] / rank_cor["ANALISES"] * 100,
-    0,
+if rank_eq.empty:
+    st.info("Nenhuma equipe com movimentação nesse período.")
+    st.stop()
+
+# Taxas de conversão por equipe
+rank_eq["TAXA_APROV_ANALISES"] = np.where(
+    rank_eq["ANALISES"] > 0,
+    rank_eq["APROVACOES"] / rank_eq["ANALISES"] * 100,
+    0
 )
 
-rank_cor = rank_cor.sort_values(["VENDAS", "VGV"], ascending=False)
+rank_eq["TAXA_VENDAS_ANALISES"] = np.where(
+    rank_eq["ANALISES"] > 0,
+    rank_eq["VENDAS"] / rank_eq["ANALISES"] * 100,
+    0
+)
+
+# Ordena
+rank_eq = rank_eq.sort_values(["VENDAS", "VGV"], ascending=False)
 
 # ---------------------------------------------------------
-# EXIBIÇÃO
+# LINHA TOTAL IMOBILIÁRIA (SOMATÓRIO)
 # ---------------------------------------------------------
-st.markdown("#### 📋 Tabela detalhada do ranking por corretor")
+tot_analises = rank_eq["ANALISES"].sum()
+tot_aprov = rank_eq["APROVACOES"].sum()
+tot_vendas = rank_eq["VENDAS"].sum()
+tot_vgv = rank_eq["VGV"].sum()
+
+tot_taxa_aprov = (tot_aprov / tot_analises * 100) if tot_analises > 0 else 0
+tot_taxa_vendas = (tot_vendas / tot_analises * 100) if tot_analises > 0 else 0
+
+total_row = pd.DataFrame(
+    {
+        "EQUIPE": ["TOTAL IMOBILIÁRIA"],
+        "ANALISES": [tot_analises],
+        "APROVACOES": [tot_aprov],
+        "VENDAS": [tot_vendas],
+        "VGV": [tot_vgv],
+        "TAXA_APROV_ANALISES": [tot_taxa_aprov],
+        "TAXA_VENDAS_ANALISES": [tot_taxa_vendas],
+    }
+)
+
+# DataFrame só para a TABELA (inclui total)
+rank_eq_table = pd.concat([rank_eq, total_row], ignore_index=True)
+
+# ---------------------------------------------------------
+# EXIBIÇÃO — TABELA EM CIMA, GRÁFICO EMBAIXO
+# ---------------------------------------------------------
+st.markdown("#### 📋 Tabela detalhada do ranking por equipe")
 st.dataframe(
-    rank_cor.style.format(
+    rank_eq_table.style.format(
         {
             "VGV": "R$ {:,.2f}".format,
             "TAXA_APROV_ANALISES": "{:.1f}%".format,
@@ -229,15 +246,15 @@ st.dataframe(
     hide_index=True,
 )
 
-st.markdown("#### 💰 VGV por corretor")
-chart_vgv = (
-    alt.Chart(rank_cor)
+st.markdown("#### 💰 VGV por equipe (período filtrado)")
+chart_vgv_eq = (
+    alt.Chart(rank_eq)  # aqui NÃO vai a linha TOTAL
     .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
     .encode(
         x=alt.X("VGV:Q", title="VGV (R$)"),
-        y=alt.Y("CORRETOR:N", sort="-x", title="Corretor"),
+        y=alt.Y("EQUIPE:N", sort="-x", title="Equipe"),
         tooltip=[
-            "CORRETOR",
+            "EQUIPE",
             "ANALISES",
             "APROVACOES",
             "VENDAS",
@@ -248,5 +265,12 @@ chart_vgv = (
     )
     .properties(height=500)
 )
-st.altair_chart(chart_vgv, use_container_width=True)
+st.altair_chart(chart_vgv_eq, use_container_width=True)
 
+st.markdown(
+    "<hr style='border-color:#1f2937'>"
+    "<p style='text-align:center; color:#6b7280;'>"
+    "Ranking por equipe baseado em análises, aprovações, vendas e VGV."
+    "</p>",
+    unsafe_allow_html=True,
+)

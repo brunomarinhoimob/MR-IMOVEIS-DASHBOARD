@@ -19,20 +19,21 @@ LOGO_PATH = "logo_mr.png"
 col_logo, col_tit = st.columns([1, 4])
 with col_logo:
     try:
-        st.image(LOGO_PATH, use_container_width=True)
+        st.image(LOGO_PATH, use_column_width=True)
     except Exception:
         st.write("MR Imóveis")
 
 with col_tit:
     st.markdown("## Clientes em Análise / Reanálise")
     st.caption(
-        "Aqui você acompanha somente clientes cujo **status atual** está como "
-        "**EM ANÁLISE** ou **REANÁLISE**, filtrados por período e equipe."
+        "Acompanhe somente clientes cujo **status atual** está como "
+        "**EM ANÁLISE** ou **REANÁLISE**, com filtro por período, equipe "
+        "e busca por nome/CPF."
     )
 
 
 # ---------------------------------------------------------
-# FUNÇÃO PARA LIMPAR DATA
+# FUNÇÃO AUXILIAR PARA LIMPAR DATA
 # ---------------------------------------------------------
 def limpar_para_data(serie):
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
@@ -40,7 +41,7 @@ def limpar_para_data(serie):
 
 
 # ---------------------------------------------------------
-# CONFIG DA PLANILHA (MESMO LINK DA PÁGINA CLIENTES MR)
+# CONFIG: LINK DA PLANILHA (MESMO DA PÁGINA CLIENTES MR)
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
@@ -48,13 +49,13 @@ CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&
 
 
 # ---------------------------------------------------------
-# CARREGAR E PREPARAR DADOS
+# CARREGAR E PREPARAR DADOS (MESMA LÓGICA DA CLIENTES MR)
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
 def carregar_dados():
     df = pd.read_csv(CSV_URL)
 
-    # Padroniza nomes
+    # Padroniza nomes de colunas
     df.columns = [c.strip().upper() for c in df.columns]
 
     # DATA / DIA
@@ -69,12 +70,54 @@ def carregar_dados():
     for col in ["EQUIPE", "CORRETOR"]:
         if col in df.columns:
             df[col] = (
-                df[col].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+                df[col]
+                .fillna("NÃO INFORMADO")
+                .astype(str)
+                .str.upper()
+                .str.strip()
             )
         else:
             df[col] = "NÃO INFORMADO"
 
-    # STATUS
+    # CONSTRUTORA / EMPREENDIMENTO
+    possiveis_construtora = ["CONSTRUTORA", "INCORPORADORA"]
+    possiveis_empreend = ["EMPREENDIMENTO", "PRODUTO", "IMÓVEL", "IMOVEL"]
+
+    col_construtora = None
+    for c in possiveis_construtora:
+        if c in df.columns:
+            col_construtora = c
+            break
+
+    col_empreend = None
+    for c in possiveis_empreend:
+        if c in df.columns:
+            col_empreend = c
+            break
+
+    if col_construtora is None:
+        df["CONSTRUTORA_BASE"] = "NÃO INFORMADO"
+    else:
+        df["CONSTRUTORA_BASE"] = (
+            df[col_construtora]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if col_empreend is None:
+        df["EMPREENDIMENTO_BASE"] = "NÃO INFORMADO"
+    else:
+        df["EMPREENDIMENTO_BASE"] = (
+            df[col_empreend]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    # STATUS BASE + SITUAÇÃO ORIGINAL
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -90,28 +133,62 @@ def carregar_dados():
 
     df["STATUS_BASE"] = ""
     if col_situacao:
-        st_raw = df[col_situacao].fillna("").astype(str).str.upper()
-        df.loc[st_raw.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[st_raw.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[st_raw.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
-        df.loc[st_raw.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[st_raw.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[st_raw.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+        status = df[col_situacao].fillna("").astype(str).str.upper()
+        df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
+        df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
+        df.loc[status.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
+        df.loc[status.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
+        df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
+        df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
-    # Nome
+        df["SITUACAO_ORIGINAL"] = (
+            df[col_situacao].fillna("").astype(str).str.upper().str.strip()
+        )
+    else:
+        df["SITUACAO_ORIGINAL"] = "NÃO INFORMADO"
+
+    # OBSERVAÇÕES / VGV
+    if "OBSERVAÇÕES" in df.columns:
+        df["OBSERVACOES_RAW"] = (
+            df["OBSERVAÇÕES"].fillna("").astype(str).str.strip()
+        )
+        df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
+    else:
+        df["OBSERVACOES_RAW"] = ""
+        df["VGV"] = 0.0
+
+    # NOME / CPF
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+
     col_nome = None
     for c in possiveis_nome:
         if c in df.columns:
             col_nome = c
             break
 
-    if col_nome:
+    col_cpf = None
+    for c in possiveis_cpf:
+        if c in df.columns:
+            col_cpf = c
+            break
+
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
         df["NOME_CLIENTE_BASE"] = (
             df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
         )
+
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
     else:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
 
     return df
 
@@ -119,71 +196,92 @@ def carregar_dados():
 df = carregar_dados()
 
 if df.empty:
-    st.error("Não foi possível carregar a planilha.")
+    st.error("Não foi possível carregar dados da planilha.")
     st.stop()
 
-
 # ---------------------------------------------------------
-# PREPARAÇÃO DOS DADOS
+# DEFINIÇÕES BÁSICAS
 # ---------------------------------------------------------
 if "NOME_CLIENTE_BASE" in df.columns:
     col_cliente = "NOME_CLIENTE_BASE"
 elif "CLIENTE" in df.columns:
     col_cliente = "CLIENTE"
 else:
-    st.error("Não encontrei a coluna de cliente.")
+    st.error("Não encontrei coluna de cliente na base.")
     st.stop()
 
 if "DIA" not in df.columns:
-    st.error("Não encontrei a coluna DIA.")
+    st.error("Não encontrei coluna DIA na base.")
     st.stop()
 
-
+# Garantir datetime
+df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 df_valid = df.dropna(subset=["DIA"]).copy()
 df_valid = df_valid.sort_values(by=[col_cliente, "DIA"])
 
+# Última linha = status atual
 df_status_atual = df_valid.drop_duplicates(subset=[col_cliente], keep="last").copy()
 
+# Filtra quem está EM ANÁLISE / REANÁLISE
 status_em_analise = ["EM ANÁLISE", "REANÁLISE"]
 df_em_analise_atual = df_status_atual[
     df_status_atual["STATUS_BASE"].isin(status_em_analise)
 ].copy()
 
 if df_em_analise_atual.empty:
-    st.info("Nenhum cliente em análise no momento.")
+    st.info("No momento não há clientes com status atual EM ANÁLISE ou REANÁLISE.")
     st.stop()
+
+# ---------------------------------------------------------
+# BARRA LATERAL – BUSCA (NOME / CPF)
+# ---------------------------------------------------------
+st.sidebar.title("Busca de clientes em análise 🔎")
+
+tipo_busca = st.sidebar.radio(
+    "Buscar por:",
+    ("Nome (parcial)", "CPF"),
+)
+
+termo_busca = st.sidebar.text_input(
+    "Digite o nome ou CPF do cliente",
+    placeholder="Ex: MARIA / 12345678901",
+)
+
+st.sidebar.caption(
+    "• Nome: pode digitar só uma parte (ex: 'SILVA')\n"
+    "• CPF: digite só números (não precisa de ponto ou traço)"
+)
 
 
 # ---------------------------------------------------------
-# SELETOR DE PERÍODO (7 / 15 / 30 / 60 / 90 DIAS)
+# SELETOR DE PERÍODO
 # ---------------------------------------------------------
 st.markdown("### 📅 Período de análise")
 
 periodo = st.radio(
-    "Selecione o período:",
+    "Selecione o período (dias):",
     [7, 15, 30, 60, 90],
-    index=2,  # default 30 dias
+    index=2,
     horizontal=True,
 )
 
 data_ref = df_valid["DIA"].max()
 limite_tempo = data_ref - timedelta(days=periodo)
 
-df_em_analise_atual = df_em_analise_atual[
+df_em_analise_periodo = df_em_analise_atual[
     df_em_analise_atual["DIA"] >= limite_tempo
 ].copy()
 
-if df_em_analise_atual.empty:
-    st.info(f"Não existem clientes em análise nos últimos {periodo} dias.")
+if df_em_analise_periodo.empty:
+    st.info(f"Não há clientes em análise nos últimos {periodo} dias.")
     st.stop()
-
 
 # ---------------------------------------------------------
 # FILTRO POR EQUIPE
 # ---------------------------------------------------------
-if "EQUIPE" in df_em_analise_atual.columns:
+if "EQUIPE" in df_em_analise_periodo.columns:
     equipes = (
-        df_em_analise_atual["EQUIPE"]
+        df_em_analise_periodo["EQUIPE"]
         .dropna()
         .astype(str)
         .sort_values()
@@ -198,67 +296,248 @@ if "EQUIPE" in df_em_analise_atual.columns:
     )
 
     if equipe_sel != "Todas":
-        df_filtrado = df_em_analise_atual[
-            df_em_analise_atual["EQUIPE"] == equipe_sel
+        df_filtrado = df_em_analise_periodo[
+            df_em_analise_periodo["EQUIPE"] == equipe_sel
         ].copy()
     else:
-        df_filtrado = df_em_analise_atual.copy()
+        df_filtrado = df_em_analise_periodo.copy()
 else:
-    st.warning("Coluna 'EQUIPE' não encontrada.")
-    df_filtrado = df_em_analise_atual.copy()
+    st.warning("Coluna 'EQUIPE' não encontrada. Filtro por equipe desativado.")
+    df_filtrado = df_em_analise_periodo.copy()
 
 if df_filtrado.empty:
-    st.info("Nenhum cliente encontrado dentro desse filtro.")
+    st.info("Nenhum cliente em análise dentro desse filtro.")
     st.stop()
 
-
 # ---------------------------------------------------------
-# KPIs
+# KPIs GERAIS
 # ---------------------------------------------------------
 total = len(df_filtrado)
 qtd_em = (df_filtrado["STATUS_BASE"] == "EM ANÁLISE").sum()
 qtd_re = (df_filtrado["STATUS_BASE"] == "REANÁLISE").sum()
 
 k1, k2, k3 = st.columns(3)
-k1.metric("Total em Análise", total)
-k2.metric("Em Análise", qtd_em)
-k3.metric("Reanálise", qtd_re)
+k1.metric("Total em Análise (atual)", total)
+k2.metric("Em Análise", int(qtd_em))
+k3.metric("Reanálise", int(qtd_re))
 
+# ---------------------------------------------------------
+# DETALHES POR CLIENTE (CARDS) – ENTRE KPIs E TABELA
+# ---------------------------------------------------------
+# Só mostra cards se o usuário digitou algo na busca
+if termo_busca.strip():
+    # Filtro inicial na base completa (para pegar histórico inteiro do cliente)
+    df_resultado = pd.DataFrame()
+
+    termo_limpo = termo_busca.strip().upper()
+
+    if tipo_busca.startswith("Nome"):
+        df_resultado = df[
+            df["NOME_CLIENTE_BASE"].str.contains(termo_limpo, na=False)
+        ].copy()
+    else:
+        termo_cpf = "".join(ch for ch in termo_busca if ch.isdigit())
+        df_resultado = df[
+            df["CPF_CLIENTE_BASE"].str.contains(termo_cpf, na=False)
+        ].copy()
+
+    if df_resultado.empty:
+        st.warning("Nenhum cliente encontrado com esse critério de busca.")
+    else:
+        # Cria chave única
+        df_resultado["CHAVE_CLIENTE"] = (
+            df_resultado["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+            + " | "
+            + df_resultado["CPF_CLIENTE_BASE"].fillna("")
+        )
+
+        # Mesma chave para o conjunto filtrado (clientes em análise dentro do período/equipe)
+        df_filtrado["CHAVE_CLIENTE"] = (
+            df_filtrado["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+            + " | "
+            + df_filtrado["CPF_CLIENTE_BASE"].fillna("")
+        )
+
+        chaves_em_analise = set(df_filtrado["CHAVE_CLIENTE"].unique())
+
+        # Resumo por cliente (base Cliente MR)
+        def conta_analises(s):
+            return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
+
+        def conta_aprovacoes(s):
+            return (s == "APROVADO").sum()
+
+        def conta_vendas(s):
+            return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+
+        resumo = (
+            df_resultado.groupby("CHAVE_CLIENTE")
+            .agg(
+                NOME=("NOME_CLIENTE_BASE", "first"),
+                CPF=("CPF_CLIENTE_BASE", "first"),
+                ANALISES=("STATUS_BASE", conta_analises),
+                APROVACOES=("STATUS_BASE", conta_aprovacoes),
+                VENDAS=("STATUS_BASE", conta_vendas),
+                VGV=("VGV", "sum"),
+                ULT_STATUS=("SITUACAO_ORIGINAL", lambda x: x.iloc[-1] if len(x) > 0 else ""),
+                ULT_DATA=("DIA", lambda x: x.max()),
+            )
+            .reset_index()
+        )
+
+        # Mantém somente clientes que estão EM ANÁLISE/REANÁLISE dentro do filtro da página
+        resumo = resumo[resumo["CHAVE_CLIENTE"].isin(chaves_em_analise)].copy()
+
+        if resumo.empty:
+            st.warning(
+                "Cliente encontrado, mas não está com status atual EM ANÁLISE/REANÁLISE "
+                f"dentro do filtro de período/equipe."
+            )
+        else:
+            st.markdown("### 💳 Detalhes por cliente (cards)")
+
+            # Função para checar se uma observação é numérica
+            def observacao_e_numero(txt: str) -> bool:
+                if not txt:
+                    return False
+                t = (
+                    txt.upper()
+                    .replace("R$", "")
+                    .replace(".", "")
+                    .replace(",", "")
+                    .replace(" ", "")
+                )
+                return t.isdigit()
+
+            # Cards (mesmo layout da página Clientes MR)
+            for _, row in resumo.sort_values(["VENDAS", "VGV"], ascending=False).iterrows():
+                chave = row["CHAVE_CLIENTE"]
+                df_cli = df_resultado[df_resultado["CHAVE_CLIENTE"] == chave].copy()
+
+                # Ordena por data para pegar última movimentação
+                df_cli = df_cli.sort_values("DIA")
+                ultima_linha = df_cli.iloc[-1]
+
+                ult_constr = ultima_linha.get("CONSTRUTORA_BASE", "NÃO INFORMADO")
+                ult_empr = ultima_linha.get("EMPREENDIMENTO_BASE", "NÃO INFORMADO")
+                ult_corretor = ultima_linha.get("CORRETOR", "NÃO INFORMADO")
+
+                obs_validas = [
+                    obs
+                    for obs in df_cli["OBSERVACOES_RAW"].fillna("")
+                    if obs and not observacao_e_numero(obs)
+                ]
+                ultima_obs = obs_validas[-1] if obs_validas else ""
+
+                analises_em = (df_cli["STATUS_BASE"] == "EM ANÁLISE").sum()
+                reanalises = (df_cli["STATUS_BASE"] == "REANÁLISE").sum()
+                analises_total = analises_em + reanalises
+
+                st.markdown("---")
+                st.markdown(f"##### 👤 {row['NOME']}")
+
+                col_top1, col_top2 = st.columns(2)
+
+                with col_top1:
+                    cpf_fmt = row["CPF"] if row["CPF"] else "NÃO INFORMADO"
+                    situacao_fmt = row["ULT_STATUS"] or "NÃO INFORMADO"
+
+                    st.write(f"**CPF:** `{cpf_fmt}`")
+                    st.write(f"**Situação atual:** `{situacao_fmt}`")
+                    st.write(
+                        f"**Corretor responsável (última movimentação):** `{ult_corretor}`"
+                    )
+                    st.write(
+                        f"**Construtora (última movimentação):** `{ult_constr}`"
+                    )
+                    st.write(
+                        f"**Empreendimento (última movimentação):** `{ult_empr}`"
+                    )
+                    if ultima_obs:
+                        st.write(f"**Última observação:** `{ultima_obs}`")
+
+                with col_top2:
+                    if pd.notna(row["ULT_DATA"]):
+                        data_fmt = row["ULT_DATA"].strftime("%d/%m/%Y")
+                    else:
+                        data_fmt = "NÃO INFORMADA"
+                    st.write(f"**Última movimentação:** `{data_fmt}`")
+
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Análises (só EM)", int(analises_em))
+                m2.metric("Reanálises", int(reanalises))
+                m3.metric("Análises (EM + RE)", int(analises_total))
+
+                m4, m5, m6 = st.columns(3)
+                m4.metric("Aprovações", int(row["APROVACOES"]))
+                m5.metric("Vendas", int(row["VENDAS"]))
+                m6.metric(
+                    "VGV total",
+                    f"R$ {row['VGV']:,.2f}".replace(",", "X")
+                    .replace(".", ",")
+                    .replace("X", "."),
+                )
+
+# ---------------------------------------------------------
+# LINHA DE SEPARAÇÃO (ONDE VOCÊ MARCOU EM VERMELHO)
+# ---------------------------------------------------------
 st.markdown("---")
 
+# ---------------------------------------------------------
+# TABELA MAIS CLEAN (RENOMEADA E FORMATADA)
+# ---------------------------------------------------------
+st.markdown("### 📋 Lista de clientes em análise")
 
-# ---------------------------------------------------------
-# TABELA DETALHADA
-# ---------------------------------------------------------
 colunas_preferidas = [
-    col_cliente,
+    "NOME_CLIENTE_BASE",
+    "CPF_CLIENTE_BASE",
     "EQUIPE",
     "CORRETOR",
     "EMPREENDIMENTO_BASE",
     "STATUS_BASE",
     "DIA",
 ]
-
 colunas_existentes = [c for c in colunas_preferidas if c in df_filtrado.columns]
 
-st.markdown("### 📋 Lista de clientes em análise")
-st.dataframe(
-    df_filtrado[colunas_existentes].sort_values("DIA", ascending=False),
-    use_container_width=True,
-)
+df_tabela = df_filtrado[colunas_existentes].copy()
 
+# Formata data
+if "DIA" in df_tabela.columns:
+    df_tabela["DIA"] = pd.to_datetime(df_tabela["DIA"], errors="coerce").dt.strftime(
+        "%d/%m/%Y"
+    )
+
+# Renomeia colunas para ficar mais bonito
+renomear = {
+    "NOME_CLIENTE_BASE": "Cliente",
+    "CPF_CLIENTE_BASE": "CPF",
+    "EQUIPE": "Equipe",
+    "CORRETOR": "Corretor",
+    "EMPREENDIMENTO_BASE": "Empreendimento",
+    "STATUS_BASE": "Status",
+    "DIA": "Última atualização",
+}
+df_tabela = df_tabela.rename(columns=renomear)
+
+df_tabela = df_tabela.sort_values("Última atualização", ascending=False)
+
+st.dataframe(
+    df_tabela,
+    use_container_width=True,
+    hide_index=True,
+)
 
 # ---------------------------------------------------------
 # RESUMO POR EQUIPE
 # ---------------------------------------------------------
-if "EQUIPE" in df_filtrado.columns:
+if "Equipe" in df_tabela.columns:
     st.markdown("### 👥 Clientes em análise por equipe")
 
     resumo_equipe = (
-        df_filtrado.groupby("EQUIPE")[col_cliente]
+        df_tabela.groupby("Equipe")["Cliente"]
         .nunique()
         .reset_index(name="Qtde Clientes")
         .sort_values("Qtde Clientes", ascending=False)
     )
 
-    st.dataframe(resumo_equipe, use_container_width=True)
+    st.dataframe(resumo_equipe, use_container_width=True, hide_index=True)

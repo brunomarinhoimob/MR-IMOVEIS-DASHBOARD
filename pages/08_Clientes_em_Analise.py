@@ -233,7 +233,7 @@ if df_em_analise_atual.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# BARRA LATERAL – BUSCA (NOME / CPF)
+# BARRA LATERAL – BUSCA (NOME / CPF) + EQUIPE
 # ---------------------------------------------------------
 st.sidebar.title("Busca de clientes em análise 🔎")
 
@@ -251,7 +251,6 @@ st.sidebar.caption(
     "• Nome: pode digitar só uma parte (ex: 'SILVA')\n"
     "• CPF: digite só números (não precisa de ponto ou traço)"
 )
-
 
 # ---------------------------------------------------------
 # SELETOR DE PERÍODO
@@ -277,8 +276,10 @@ if df_em_analise_periodo.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# FILTRO POR EQUIPE
+# FILTRO POR EQUIPE (AGORA NA LATERAL)
 # ---------------------------------------------------------
+df_filtrado = df_em_analise_periodo.copy()
+
 if "EQUIPE" in df_em_analise_periodo.columns:
     equipes = (
         df_em_analise_periodo["EQUIPE"]
@@ -289,8 +290,11 @@ if "EQUIPE" in df_em_analise_periodo.columns:
         .tolist()
     )
 
-    equipe_sel = st.selectbox(
-        "Filtrar por equipe:",
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Filtro por equipe")
+
+    equipe_sel = st.sidebar.selectbox(
+        "Equipe:",
         options=["Todas"] + equipes,
         index=0,
     )
@@ -299,11 +303,8 @@ if "EQUIPE" in df_em_analise_periodo.columns:
         df_filtrado = df_em_analise_periodo[
             df_em_analise_periodo["EQUIPE"] == equipe_sel
         ].copy()
-    else:
-        df_filtrado = df_em_analise_periodo.copy()
 else:
     st.warning("Coluna 'EQUIPE' não encontrada. Filtro por equipe desativado.")
-    df_filtrado = df_em_analise_periodo.copy()
 
 if df_filtrado.empty:
     st.info("Nenhum cliente em análise dentro desse filtro.")
@@ -479,7 +480,7 @@ if termo_busca.strip():
                 )
 
 # ---------------------------------------------------------
-# LINHA DE SEPARAÇÃO (ONDE VOCÊ MARCOU EM VERMELHO)
+# LINHA DE SEPARAÇÃO
 # ---------------------------------------------------------
 st.markdown("---")
 

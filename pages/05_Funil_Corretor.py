@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import date
+import requests
+from datetime import date, timedelta
+
+from utils.supremo_config import TOKEN_SUPREMO
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -28,11 +31,18 @@ GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
 # ---------------------------------------------------------
+# CONFIG: API LEADS SUPREMO
+# ---------------------------------------------------------
+BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
+
+
+# ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
 # ---------------------------------------------------------
 def limpar_para_data(serie):
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
+
 
 # ---------------------------------------------------------
 # CARREGAR E PREPARAR DADOS
@@ -105,6 +115,88 @@ if df.empty:
     st.error("Não foi possível carregar dados da planilha. Verifique o link/gid.")
     st.stop()
 
+
+# ---------------------------------------------------------
+# CARREGAR LEADS DO SUPREMO (ATÉ ~1000 LEADS)
+# ---------------------------------------------------------
+def get_leads_page(pagina: int = 1) -> pd.DataFrame:
+    """
+    Busca uma página de leads na API do Supremo.
+    """
+    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
+    params = {"pagina": pagina}
+
+    try:
+        resp = requests.get(BASE_URL_LEADS, headers=headers, params=params, timeout=30)
+    except Exception as e:
+        st.error(f"Erro de conexão com a API de leads: {e}")
+        return pd.DataFrame()
+
+    if resp.status_code != 200:
+        st.error(f"Erro ao buscar leads (HTTP {resp.status_code}): {resp.text}")
+        return pd.DataFrame()
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        st.error(f"Erro ao interpretar JSON de leads: {e}")
+        return pd.DataFrame()
+
+    if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
+        return pd.DataFrame(data["data"])
+    if isinstance(data, list):
+        return pd.DataFrame(data)
+
+    st.error("Formato inesperado do retorno da API de leads.")
+    st.write(data)
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=60)
+def carregar_leads(limit: int = 1000, max_pages: int = 20) -> pd.DataFrame:
+    """
+    Busca até 'limit' leads no Supremo, varrendo páginas sequencialmente.
+    """
+    dfs = []
+    total = 0
+    pagina = 1
+
+    while total < limit and pagina <= max_pages:
+        df_page = get_leads_page(pagina=pagina)
+        if df_page.empty:
+            break
+
+        dfs.append(df_page)
+        total += len(df_page)
+        pagina += 1
+
+    if not dfs:
+        return pd.DataFrame()
+
+    df_all = pd.concat(dfs, ignore_index=True)
+
+    # Remove duplicados por id, se existir
+    if "id" in df_all.columns:
+        df_all = df_all.drop_duplicates(subset="id", keep="first")
+
+    # Garante no máximo "limit" registros
+    if len(df_all) > limit:
+        df_all = df_all.head(limit)
+
+    # Trata data de captura
+    if "data_captura" in df_all.columns:
+        df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
+
+    return df_all
+
+
+df_leads = carregar_leads()
+
+# Guarda também no session_state para reutilizar em outras páginas
+if "df_leads" not in st.session_state:
+    st.session_state["df_leads"] = df_leads
+
+
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES DO FUNIL
 # ---------------------------------------------------------
@@ -112,19 +204,24 @@ def conta_analises(s):
     """Análises totais (EM + RE) – volume."""
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
+
 def conta_analises_base(s):
     """Análises para base de conversão – SOMENTE EM ANÁLISE."""
     return (s == "EM ANÁLISE").sum()
+
 
 def conta_reanalises(s):
     """Quantidade de REANÁLISE."""
     return (s == "REANÁLISE").sum()
 
+
 def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
 
+
 def conta_vendas(s):
     return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS
@@ -138,12 +235,15 @@ if not dias_validos.empty:
     data_max = dias_validos.max()
 else:
     hoje = date.today()
-    data_min = hoje
     data_max = hoje
+    data_min = hoje - timedelta(days=30)
+
+# 🎯 janela padrão: últimos 30 dias até a última data da base
+data_ini_default = max(data_min, data_max - timedelta(days=30))
 
 periodo = st.sidebar.date_input(
     "Período (para ver o funil do corretor)",
-    value=(data_min, data_max),
+    value=(data_ini_default, data_max),
     min_value=data_min,
     max_value=data_max,
 )
@@ -151,7 +251,7 @@ periodo = st.sidebar.date_input(
 if isinstance(periodo, tuple):
     data_ini, data_fim = periodo
 else:
-    data_ini, data_fim = data_min, data_max
+    data_ini, data_fim = data_ini_default, data_max
 
 # Filtro de corretor
 lista_corretor = sorted(df["CORRETOR"].dropna().unique())
@@ -187,9 +287,42 @@ st.markdown(f"## 🧑‍💼 Funil do Corretor: **{corretor_sel}**")
 
 df_cor_periodo = df_periodo[df_periodo["CORRETOR"] == corretor_sel].copy()
 
+# ---------------------------------------------------------
+# LEADS DO CORRETOR NO PERÍODO (API SUPREMO)
+# ---------------------------------------------------------
+total_leads_corretor_periodo = None
+if not df_leads.empty and "data_captura" in df_leads.columns:
+    df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
+    df_leads_use["data_captura"] = pd.to_datetime(
+        df_leads_use["data_captura"], errors="coerce"
+    )
+    df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
+
+    # Normaliza nome do corretor vindo do CRM
+    if "nome_corretor" in df_leads_use.columns:
+        df_leads_use["nome_corretor_norm"] = (
+            df_leads_use["nome_corretor"].astype(str).str.upper().str.strip()
+        )
+
+        alvo = corretor_sel.upper().strip()
+
+        mask_periodo_leads = (
+            (df_leads_use["data_captura_date"] >= data_ini)
+            & (df_leads_use["data_captura_date"] <= data_fim)
+        )
+
+        df_leads_cor = df_leads_use[mask_periodo_leads].copy()
+        # filtro simples por contains no nome do corretor
+        df_leads_cor = df_leads_cor[
+            df_leads_cor["nome_corretor_norm"].str.contains(alvo, na=False)
+        ]
+
+        total_leads_corretor_periodo = len(df_leads_cor)
+
 if df_cor_periodo.empty:
     st.warning(
-        f"O corretor **{corretor_sel}** não possui registros no período selecionado."
+        f"O corretor **{corretor_sel}** não possui registros na planilha "
+        "para o período selecionado."
     )
 else:
     # Separando análises
@@ -209,8 +342,14 @@ else:
         vendas_cor / aprov_cor * 100
     ) if aprov_cor > 0 else 0
 
-    # Cards principais – separando análise x reanálise
-    c1, c2, c3, c4, c5 = st.columns(5)
+    # Cards principais – agora com LEADS do corretor
+    c0, c1, c2, c3, c4, c5 = st.columns(6)
+    with c0:
+        if total_leads_corretor_periodo is None:
+            st.metric("Leads (CRM – período)", "-")
+        else:
+            st.metric("Leads (CRM – período)", total_leads_corretor_periodo)
+
     with c1:
         st.metric("Análises (só EM)", analises_em_cor)
     with c2:
@@ -350,7 +489,7 @@ else:
             with h5:
                 st.metric(
                     "Média de APROVAÇÕES por venda (3m)",
-                    f"{media_aprov_por_venda_cor:.1f}" if vendas_cor_3m > 0 else "—",
+                    f"{media_aprov_por_venda_cor:.1f}" if aprov_cor_3m > 0 else "—",
                 )
 
             st.caption(

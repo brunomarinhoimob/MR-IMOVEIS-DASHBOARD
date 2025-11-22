@@ -93,6 +93,7 @@ def carregar_dados():
     if col_situacao:
         status = df[col_situacao].fillna("").astype(str).str.upper()
 
+        # Marca os dois tipos, mas a página vai contar SÓ "EM ANÁLISE"
         df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
 
@@ -144,11 +145,12 @@ st.caption(
     f"• Atualiza automaticamente a cada 1 minuto."
 )
 
-# Base SOMENTE com análises (EM ANÁLISE / REANÁLISE)
-df_analise_base = df[df["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
+# ✅ AQUI O AJUSTE:
+# Base SOMENTE com análises "EM ANÁLISE" (NÃO conta REANÁLISE)
+df_analise_base = df[df["STATUS_BASE"] == "EM ANÁLISE"].copy()
 
 if df_analise_base.empty:
-    st.info("Não há análises registradas na base.")
+    st.info("Não há análises registradas na base (status EM ANÁLISE).")
     st.stop()
 
 # Filtra SOMENTE análises do dia escolhido
@@ -164,7 +166,7 @@ qtde_total_dia = len(df_dia)
 
 if qtde_total_dia == 0:
     st.warning(
-        f"Não foram encontradas ANÁLISES para o dia "
+        f"Não foram encontradas ANÁLISES (status EM ANÁLISE) para o dia "
         f"**{dia_escolhido.strftime('%d/%m/%Y')}** com os filtros atuais."
     )
     st.stop()

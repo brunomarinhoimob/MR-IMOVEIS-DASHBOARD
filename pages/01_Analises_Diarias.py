@@ -13,9 +13,9 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# CABEÇALHO COM TÍTULO + LOGO MR (DENTRO DA PÁGINA)
+# CABEÇALHO COM TÍTULO + LOGO MR
 # ---------------------------------------------------------
-LOGO_PATH = "logo_mr.png"  # precisa estar na mesma pasta deste arquivo
+LOGO_PATH = "logo_mr.png"
 
 col_titulo, col_logo = st.columns([3, 1])
 with col_titulo:
@@ -24,30 +24,28 @@ with col_logo:
     try:
         st.image(LOGO_PATH, use_container_width=True)
     except Exception:
-        st.write("")
+        pass
 
-# Auto-refresh a cada 60 segundos (60000 ms)
+# Auto-refresh a cada 60 segundos
 st_autorefresh(interval=60000, key="analises_diarias_refresh")
 
 # ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA
-# (mesmos dados do app_dashboard.py)
+# PLANILHA
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
 # ---------------------------------------------------------
-# FUNÇÃO AUXILIAR PARA LIMPAR DATA
+# FUNÇÃO AUXILIAR PARA DATA
 # ---------------------------------------------------------
 def limpar_para_data(serie):
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
 # ---------------------------------------------------------
-# CARREGAR DADOS
+# CARREGAR DADOS  — SEM CACHE DO STREAMLIT
 # ---------------------------------------------------------
-@st.cache_data(ttl=60)
 def carregar_dados():
     df = pd.read_csv(CSV_URL)
 
@@ -77,88 +75,68 @@ def carregar_dados():
 
     # SITUAÇÃO BASE
     possiveis_cols_situacao = [
-        "SITUAÇÃO",
-        "SITUAÇÃO ATUAL",
-        "STATUS",
-        "SITUACAO",
-        "SITUACAO ATUAL",
+        "SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS",
+        "SITUACAO", "SITUACAO ATUAL"
     ]
-    col_situacao = None
-    for c in possiveis_cols_situacao:
-        if c in df.columns:
-            col_situacao = c
-            break
+    col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
     if col_situacao:
         status = df[col_situacao].fillna("").astype(str).str.upper()
 
-        # Marca os dois tipos, mas a página vai contar SÓ "EM ANÁLISE"
         df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
 
     return df
 
+
 df = carregar_dados()
 
 if df.empty:
-    st.error("Não foi possível carregar dados da planilha. Verifique o link/gid.")
+    st.error("Erro ao carregar planilha.")
     st.stop()
 
 # ---------------------------------------------------------
-# SIDEBAR - FILTROS BÁSICOS
+# SIDEBAR
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
-dias_validos = pd.Series(df["DIA"].dropna())
-
-if not dias_validos.empty:
-    data_min = dias_validos.min()
-    data_max = dias_validos.max()
-else:
-    hoje = date.today()
-    data_min = hoje
-    data_max = hoje
-
-dia_padrao = data_max
+dias_validos = df["DIA"].dropna()
+data_min = dias_validos.min()
+data_max = dias_validos.max()
 
 dia_escolhido = st.sidebar.date_input(
     "Dia das análises",
-    value=dia_padrao,
+    value=data_max,
     min_value=data_min,
     max_value=data_max,
 )
 
-# Filtro Equipe
-lista_equipes = sorted(df["EQUIPE"].dropna().unique())
+lista_equipes = sorted(df["EQUIPE"].unique())
 equipe_sel = st.sidebar.selectbox("Equipe", ["Todas"] + lista_equipes)
 
-# Filtro Corretor
-lista_corretor = sorted(df["CORRETOR"].dropna().unique())
+lista_corretor = sorted(df["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
 # ---------------------------------------------------------
-# BASE DE ANÁLISES DO DIA
+# BASE DE ANÁLISES DO DIA  — APENAS "EM ANÁLISE"
 # ---------------------------------------------------------
 st.caption(
     f"Dia selecionado: **{dia_escolhido.strftime('%d/%m/%Y')}** "
-    f"• Atualiza automaticamente a cada 1 minuto."
+    "• Atualiza automaticamente a cada 1 minuto."
 )
 
-# ✅ AQUI O AJUSTE:
-# Base SOMENTE com análises "EM ANÁLISE" (NÃO conta REANÁLISE)
 df_analise_base = df[df["STATUS_BASE"] == "EM ANÁLISE"].copy()
 
 if df_analise_base.empty:
-    st.info("Não há análises registradas na base (status EM ANÁLISE).")
+    st.info("Não há análises com status EM ANÁLISE.")
     st.stop()
 
-# Filtra SOMENTE análises do dia escolhido
-df_dia = df_analise_base[limpar_para_data(df_analise_base["DIA"]) == dia_escolhido]
+df_dia = df_analise_base[df_analise_base["DIA"] == dia_escolhido]
 
-# Aplica filtros de equipe/corretor
 if equipe_sel != "Todas":
     df_dia = df_dia[df_dia["EQUIPE"] == equipe_sel]
+
 if corretor_sel != "Todos":
     df_dia = df_dia[df_dia["CORRETOR"] == corretor_sel]
 
@@ -166,13 +144,13 @@ qtde_total_dia = len(df_dia)
 
 if qtde_total_dia == 0:
     st.warning(
-        f"Não foram encontradas ANÁLISES (status EM ANÁLISE) para o dia "
-        f"**{dia_escolhido.strftime('%d/%m/%Y')}** com os filtros atuais."
+        f"Nenhuma ANÁLISE (EM ANÁLISE) no dia "
+        f"{dia_escolhido.strftime('%d/%m/%Y')} com esses filtros."
     )
     st.stop()
 
 # ---------------------------------------------------------
-# VISÃO GERAL DO DIA
+# VISÃO GERAL
 # ---------------------------------------------------------
 c1, c2 = st.columns([1, 3])
 with c1:
@@ -187,28 +165,30 @@ st.markdown("---")
 
 col_eq, col_corr = st.columns(2)
 
-# --------- QUADRO POR EQUIPE + TOTAL IMOB ---------
+# ---------------------------------------------------------
+# POR EQUIPE
+# ---------------------------------------------------------
 with col_eq:
     st.markdown("### 📌 Análises por Equipe (no dia)")
     analises_equipe = (
-        df_dia.groupby("EQUIPE", as_index=False)
+        df_dia.groupby("EQUIPE")
         .size()
-        .rename(columns={"size": "ANÁLISES"})
+        .reset_index(name="ANÁLISES")
         .sort_values("ANÁLISES", ascending=False)
     )
-    total_row = pd.DataFrame(
-        {"EQUIPE": ["TOTAL IMOBILIÁRIA"], "ANÁLISES": [qtde_total_dia]}
-    )
+    total_row = pd.DataFrame({"EQUIPE": ["TOTAL IMOBILIÁRIA"], "ANÁLISES": [qtde_total_dia]})
     tabela_equipe = pd.concat([analises_equipe, total_row], ignore_index=True)
     st.dataframe(tabela_equipe, use_container_width=True, hide_index=True)
 
-# --------- QUADRO POR CORRETOR ---------
+# ---------------------------------------------------------
+# POR CORRETOR
+# ---------------------------------------------------------
 with col_corr:
     st.markdown("### 👥 Corretores que Subiram Análises (no dia)")
     analises_corretor = (
-        df_dia.groupby("CORRETOR", as_index=False)
+        df_dia.groupby("CORRETOR")
         .size()
-        .rename(columns={"size": "ANÁLISES"})
+        .reset_index(name="ANÁLISES")
         .sort_values("ANÁLISES", ascending=False)
     )
     st.dataframe(analises_corretor, use_container_width=True, hide_index=True)
@@ -216,8 +196,7 @@ with col_corr:
 st.markdown(
     "<hr style='border-color:#1f2937'>"
     "<p style='text-align:center; color:#6b7280;'>"
-    "Painel de Análises Diárias – ideal para TV no salão da imobiliária. "
-    "Atualizado automaticamente a cada 60 segundos."
+    "Painel de Análises Diárias — ideal para TV. Atualiza a cada 60 segundos."
     "</p>",
     unsafe_allow_html=True,
 )

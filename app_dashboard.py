@@ -4,9 +4,6 @@ from datetime import timedelta
 
 from utils.leads_cache import carregar_leads, obter_timestamp_cache
 
-# (se você usar TOKEN_SUPREMO em outro lugar, mantém aqui)
-# from utils.supremo_config import TOKEN_SUPREMO
-
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
@@ -67,8 +64,11 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
     return dt.dt.date
 
 
-@st.cache_data(ttl=60)
 def carregar_dados_planilha() -> pd.DataFrame:
+    """
+    Carrega SEM cache do Streamlit, pra sempre pegar a versão mais recente
+    da planilha. Qualquer cache/control fica por conta do próprio Google Sheets.
+    """
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
 

@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-import difflib
 import os
 import pickle
-from datetime import date, timedelta, datetime  # <-- inclui datetime
+from datetime import date, timedelta, datetime
 
 from utils.supremo_config import TOKEN_SUPREMO
 
@@ -53,24 +52,25 @@ st.markdown(
 LOGO_PATH = "logo_mr.png"
 try:
     st.sidebar.image(LOGO_PATH, use_column_width=True)
-except:
+except Exception:
     pass
 
 # ---------------------------------------------------------
-# PLANILHA
+# PLANILHA – GOOGLE SHEETS
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
 
-def limpar_para_data(serie):
+def limpar_para_data(serie: pd.Series) -> pd.Series:
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
 
 @st.cache_data(ttl=60)
-def carregar_dados():
+def carregar_dados_planilha() -> pd.DataFrame:
+    """Carrega base de análises/vendas do Google Sheets e normaliza colunas."""
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
 
@@ -118,23 +118,12 @@ def carregar_dados():
     else:
         df["VGV"] = 0
 
-    # -----------------------------------------------------
-    # NOME / CPF BASE – para chave de cliente
-    # -----------------------------------------------------
+    # NOME / CPF BASE – chave do cliente
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
-    col_nome = None
-    for c in possiveis_nome:
-        if c in df.columns:
-            col_nome = c
-            break
-
-    col_cpf = None
-    for c in possiveis_cpf:
-        if c in df.columns:
-            col_cpf = c
-            break
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
     if col_nome is None:
         df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
@@ -160,54 +149,56 @@ def carregar_dados():
     return df
 
 
-df = carregar_dados()
+df = carregar_dados_planilha()
 
 if df.empty:
     st.error("Erro ao carregar planilha.")
     st.stop()
 
 # ---------------------------------------------------------
-# API LEADS – SUPREMO (COM CACHE .PKL EM DISCO)
+# API LEADS – SUPREMO (CACHE EM DISCO .PKL)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
-# Caminho do cache em disco
 CACHE_DIR = "cache"
 CACHE_FILE = os.path.join(CACHE_DIR, "leads_cache.pkl")
-CACHE_TTL_MINUTES = 30  # tempo de vida do cache em minutos
+CACHE_TTL_MINUTES = 30  # 30 minutos de vida do cache
+
+# Garante que a pasta existe
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 
-def get_leads_page(pagina=1):
+def get_leads_page(pagina: int = 1) -> pd.DataFrame:
+    """Busca uma página de leads na API do Supremo."""
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
     params = {"pagina": pagina}
 
     try:
         resp = requests.get(BASE_URL_LEADS, headers=headers, params=params, timeout=30)
     except Exception as e:
-        st.error(f"Erro ao conectar: {e}")
+        st.error(f"Erro ao conectar na API de leads: {e}")
         return pd.DataFrame()
 
     if resp.status_code != 200:
-        st.warning(f"Resposta da API de leads com status {resp.status_code}")
+        st.warning(f"API de leads retornou status {resp.status_code}.")
         return pd.DataFrame()
 
     try:
         data = resp.json()
-    except Exception:
-        st.warning("Não foi possível decodificar o JSON de leads.")
+    except Exception as e:
+        st.warning(f"Erro ao decodificar JSON dos leads: {e}")
         return pd.DataFrame()
 
     if isinstance(data, dict) and "data" in data:
         return pd.DataFrame(data["data"])
-
     if isinstance(data, list):
         return pd.DataFrame(data)
 
     return pd.DataFrame()
 
 
-def carregar_leads_from_cache():
-    """Carrega leads do arquivo .pkl se for recente o suficiente."""
+def carregar_leads_from_cache() -> pd.DataFrame | None:
+    """Carrega leads do arquivo .pkl se o cache ainda estiver válido."""
     if not os.path.exists(CACHE_FILE):
         return None
 
@@ -215,7 +206,7 @@ def carregar_leads_from_cache():
         with open(CACHE_FILE, "rb") as f:
             cache_data = pickle.load(f)
     except Exception as e:
-        st.warning(f"Erro ao ler cache de leads: {e}")
+        st.warning(f"Não foi possível ler o cache de leads: {e}")
         return None
 
     ts = cache_data.get("timestamp")
@@ -224,18 +215,16 @@ def carregar_leads_from_cache():
     if ts is None or df_cached is None:
         return None
 
-    # Verifica se passou do TTL
+    # verifica se o cache expirou
     if datetime.now() - ts > timedelta(minutes=CACHE_TTL_MINUTES):
-        # Cache expirado
         return None
 
     return df_cached
 
 
-def salvar_leads_no_cache(df_leads: pd.DataFrame):
-    """Salva leads e timestamp em arquivo .pkl."""
+def salvar_leads_no_cache(df_leads: pd.DataFrame) -> None:
+    """Salva leads + timestamp em arquivo .pkl (mesmo se estiver vazio)."""
     try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
         payload = {
             "timestamp": datetime.now(),
             "df": df_leads
@@ -243,23 +232,23 @@ def salvar_leads_no_cache(df_leads: pd.DataFrame):
         with open(CACHE_FILE, "wb") as f:
             pickle.dump(payload, f)
     except Exception as e:
-        # Não quebra o app se der erro no cache
+        # não quebra o app se der erro no cache
         st.warning(f"Não foi possível salvar o cache de leads: {e}")
 
 
-def carregar_leads(limit=1000, max_pages=100):
+def carregar_leads(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
     """
     Carrega leads usando cache em disco.
-    Se o cache for recente (< 30min), usa o cache.
-    Senão, chama a API, atualiza o cache e devolve.
-    SEMPRE tenta criar o arquivo .pkl (mesmo se vier vazio).
+    1) Se o cache for recente (< 30 min), usa o cache.
+    2) Senão, chama a API, consolida os leads, salva o cache e devolve.
+    SEMPRE tenta criar o arquivo .pkl, mesmo se vier vazio.
     """
     # 1) tenta cache
     df_cache = carregar_leads_from_cache()
     if df_cache is not None:
         return df_cache
 
-    # 2) senão, busca na API normalmente
+    # 2) busca na API
     dfs = []
     total = 0
     pagina = 1
@@ -268,6 +257,7 @@ def carregar_leads(limit=1000, max_pages=100):
         df_page = get_leads_page(pagina)
         if df_page.empty:
             break
+
         dfs.append(df_page)
         total += len(df_page)
         pagina += 1
@@ -275,18 +265,22 @@ def carregar_leads(limit=1000, max_pages=100):
     if dfs:
         df_all = pd.concat(dfs, ignore_index=True)
 
+        # remove duplicados por ID, se existir
         if "id" in df_all.columns:
             df_all = df_all.drop_duplicates(subset="id")
 
         df_all = df_all.head(limit)
 
+        # converte data_captura se existir
         if "data_captura" in df_all.columns:
-            df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
+            df_all["data_captura"] = pd.to_datetime(
+                df_all["data_captura"], errors="coerce"
+            )
     else:
-        # Mesmo sem leads, cria um DataFrame vazio e salva no cache
+        # mesmo sem leads, cria DataFrame vazio
         df_all = pd.DataFrame()
 
-    # salva no cache (sempre)
+    # 3) salva no cache (sempre)
     salvar_leads_no_cache(df_all)
 
     return df_all
@@ -295,11 +289,12 @@ def carregar_leads(limit=1000, max_pages=100):
 # Carrega leads (usando cache em disco)
 df_leads = carregar_leads()
 
+# guarda no session_state (se quiser reaproveitar em outras páginas)
 if "df_leads" not in st.session_state:
     st.session_state["df_leads"] = df_leads
 
 # ---------------------------------------------------------
-# SIDEBAR
+# SIDEBAR – FILTROS
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
@@ -330,7 +325,7 @@ lista_corretor = sorted(base_cor["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
 # ---------------------------------------------------------
-# FILTRO BASE
+# FILTRO PRINCIPAL DA BASE
 # ---------------------------------------------------------
 df_filtrado = df[
     (df["DIA"] >= data_ini) &
@@ -404,7 +399,7 @@ taxa_venda_analise = (vendas_total / analises_total * 100) if analises_total els
 taxa_venda_aprov = (vendas_total / aprovacoes * 100) if aprovacoes else 0
 
 # ---------------------------------------------------------
-# CARDS
+# CARDS – ANÁLISES & VENDAS
 # ---------------------------------------------------------
 st.subheader("Resumo de Análises & Vendas")
 
@@ -425,14 +420,14 @@ c9.metric("Vendas/Análises", f"{taxa_venda_analise:.1f}%")
 c10.metric("Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
 # ---------------------------------------------------------
-# LEADS – RESUMO
+# LEADS – RESUMO DO SUPREMO
 # ---------------------------------------------------------
 st.markdown("---")
 st.subheader("📈 Resumo de Leads (Supremo CRM)")
 
 df_leads_use = df_leads.copy()
 
-if not df_leads_use.empty:
+if not df_leads_use.empty and "data_captura" in df_leads_use.columns:
     df_leads_use = df_leads_use.dropna(subset=["data_captura"])
     df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
@@ -451,15 +446,16 @@ if not df_leads_use.empty:
             df_leads_use["nome_corretor"].astype(str).str.upper().str.strip()
         )
 
-        cL2.metric("Corretores ativos", df_leads_use["nome_corretor_norm"].nunique())
+        qtd_corretor = df_leads_use["nome_corretor_norm"].nunique()
+        cL2.metric("Corretores ativos", qtd_corretor)
 
-        if df_leads_use["nome_corretor_norm"].nunique() > 0:
-            media_leads = total_leads_periodo / df_leads_use["nome_corretor_norm"].nunique()
+        if qtd_corretor > 0:
+            media_leads = total_leads_periodo / qtd_corretor
             cL3.metric("Média por corretor", f"{media_leads:.1f}")
         else:
             cL3.metric("Média por corretor", "-")
 else:
-    st.info("Nenhum lead carregado.")
+    st.info("Nenhum lead carregado ou campo 'data_captura' ausente na base.")
 
 # ---------------------------------------------------------
 # INDICADORES DE VGV
@@ -467,14 +463,18 @@ else:
 st.markdown("---")
 st.subheader("💰 Indicadores de VGV (apenas clientes com venda)")
 
+def format_currency(valor: float) -> str:
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 c11, c12, c13 = st.columns(3)
-c11.metric(
-    "VGV Total",
-    f"R$ {vgv_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+c11.metric("VGV Total", format_currency(vgv_total))
+c12.metric("Ticket Médio", format_currency(ticket_medio))
+c13.metric("Maior VGV", format_currency(maior_vgv))
+
+st.markdown(
+    "<hr><p style='text-align:center; color:#6b7280;'>"
+    "Dashboard MR Imóveis integrado ao Google Sheets + Supremo CRM"
+    "</p>",
+    unsafe_allow_html=True,
 )
-c12.metric(
-    "Ticket Médio",
-    f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-)
-c13.metric

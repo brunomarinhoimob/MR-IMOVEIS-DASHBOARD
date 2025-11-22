@@ -95,6 +95,45 @@ def carregar_dados():
     else:
         df["VGV"] = 0.0
 
+    # -------------------------------------------------
+    # NOME / CPF BASE – para chave de cliente
+    # -------------------------------------------------
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+
+    col_nome = None
+    for c in possiveis_nome:
+        if c in df.columns:
+            col_nome = c
+            break
+
+    col_cpf = None
+    for c in possiveis_cpf:
+        if c in df.columns:
+            col_cpf = c
+            break
+
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+
     return df
 
 df = carregar_dados()
@@ -171,29 +210,64 @@ if df_periodo.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# RANKING POR CORRETOR
+# FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
 def conta_analises(s):
     return s.isin(["EM ANÁLISE", "REANÁLISE"]).sum()
 
-def conta_vendas(s):
-    return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
-
 def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
 
-rank_cor = (
+# ---------------------------------------------------------
+# BASE 1: ANÁLISES E APROVAÇÕES POR CORRETOR (POR LINHA)
+# ---------------------------------------------------------
+df_aa = (
     df_periodo.groupby("CORRETOR")
     .agg(
         ANALISES=("STATUS_BASE", conta_analises),
         APROVACOES=("STATUS_BASE", conta_aprovacoes),
-        VENDAS=("STATUS_BASE", conta_vendas),
-        VGV=("VGV", "sum"),
     )
     .reset_index()
 )
 
-# Remove corretores zerados
+# ---------------------------------------------------------
+# BASE 2: VENDAS / VGV POR CORRETOR (1 VENDA POR CLIENTE)
+# ---------------------------------------------------------
+df_vendas_ref = df_periodo[
+    df_periodo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA'])
+].copy()
+
+if not df_vendas_ref.empty:
+    df_vendas_ref["CHAVE_CLIENTE"] = (
+        df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df_vendas_ref["CPF_CLIENTE_BASE"].fillna("")
+    )
+
+    df_vendas_ref = df_vendas_ref.sort_values("DIA")
+    df_vendas_ult = df_vendas_ref.groupby("CHAVE_CLIENTE").tail(1)
+
+    df_v = (
+        df_vendas_ult.groupby("CORRETOR")
+        .agg(
+            VENDAS=("STATUS_BASE", "size"),
+            VGV=("VGV", "sum"),
+        )
+        .reset_index()
+    )
+else:
+    df_v = pd.DataFrame(columns=["CORRETOR", "VENDAS", "VGV"])
+
+# ---------------------------------------------------------
+# JUNTA AS BASES (ANÁLISES/APROVAÇÕES + VENDAS/VGV)
+# ---------------------------------------------------------
+rank_cor = pd.merge(df_aa, df_v, on="CORRETOR", how="outer").fillna(0)
+
+# garante tipos numéricos
+for col in ["ANALISES", "APROVACOES", "VENDAS", "VGV"]:
+    rank_cor[col] = pd.to_numeric(rank_cor[col], errors="coerce").fillna(0)
+
+# Remove corretores totalmente zerados
 rank_cor = rank_cor[
     (rank_cor["ANALISES"] > 0)
     | (rank_cor["APROVACOES"] > 0)
@@ -233,7 +307,7 @@ def format_posicao(pos):
 
 rank_cor["POSIÇÃO"] = rank_cor["POSIÇÃO_NUM"].apply(format_posicao)
 
-# Reorganiza colunas (POSIÇÃO visível, POSIÇÃO_NUM só para lógica se quiser)
+# Reorganiza colunas (POSIÇÃO visível, POSIÇÃO_NUM só para lógica)
 colunas_ordem = [
     "POSIÇÃO",
     "CORRETOR",
@@ -247,7 +321,7 @@ colunas_ordem = [
 rank_cor = rank_cor[colunas_ordem + ["POSIÇÃO_NUM"]]
 
 # ---------------------------------------------------------
-# ESTILO DA TABELA (1, 2 e 3 que você pediu)
+# ESTILO DA TABELA
 # ---------------------------------------------------------
 st.markdown("#### 📋 Tabela detalhada do ranking por corretor")
 
@@ -269,13 +343,12 @@ def highlight_top3(row):
     else:
         return [""] * len(row)
 
-# Estilos de header e células
 table_styles = [
     {
         "selector": "th",
         "props": [
-            ("background-color", "#0f172a"),  # azul bem escuro
-            ("color", "#e5e7eb"),             # cinza claro
+            ("background-color", "#0f172a"),
+            ("color", "#e5e7eb"),
             ("font-weight", "bold"),
             ("text-align", "center"),
             ("padding", "6px 8px"),
@@ -291,9 +364,8 @@ table_styles = [
     },
 ]
 
-# Cria Styler
 styled_rank = (
-    rank_cor.drop(columns=["POSIÇÃO_NUM"])  # não mostra POSIÇÃO_NUM
+    rank_cor.drop(columns=["POSIÇÃO_NUM"])
     .style
     .format(
         {

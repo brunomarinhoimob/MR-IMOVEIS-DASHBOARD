@@ -342,6 +342,15 @@ else:
         vendas_cor / aprov_cor * 100
     ) if aprov_cor > 0 else 0
 
+    # 🔢 Média de leads por análise (para esse corretor no período)
+    media_leads_por_analise = None
+    if (
+        total_leads_corretor_periodo is not None
+        and total_leads_corretor_periodo > 0
+        and analises_em_cor > 0
+    ):
+        media_leads_por_analise = total_leads_corretor_periodo / analises_em_cor
+
     # Cards principais – agora com LEADS do corretor
     c0, c1, c2, c3, c4, c5 = st.columns(6)
     with c0:
@@ -361,7 +370,8 @@ else:
     with c5:
         st.metric("Vendas (Total)", vendas_cor)
 
-    c6, c7, c8 = st.columns(3)
+    # Segunda linha de cards – incluindo média de leads por análise
+    c6, c7, c8, c9 = st.columns(4)
     with c6:
         st.metric(
             "VGV do corretor (período)",
@@ -371,9 +381,15 @@ else:
         st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_cor:.1f}%")
     with c8:
         st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analises_cor:.1f}%")
-
-    c9, = st.columns(1)
     with c9:
+        if media_leads_por_analise is not None:
+            st.metric("Média leads por análise", f"{media_leads_por_analise:.1f}")
+        else:
+            st.metric("Média leads por análise", "—")
+
+    # Terceira linha – taxa vendas/aprovações
+    c10, = st.columns(1)
+    with c10:
         st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov_cor:.1f}%")
 
     # Tabela do funil do corretor (usando só EM como base)

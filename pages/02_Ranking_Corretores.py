@@ -16,8 +16,8 @@ st.set_page_config(
 st.title("🏆 Ranking por Corretor – MR Imóveis")
 
 st.caption(
-    "Filtre o período e (opcionalmente) uma equipe para ver o ranking de corretores "
-    "em análises, aprovações, vendas e VGV (sem contar venda duplicada do mesmo cliente)."
+    "Ranking de corretores em análises, aprovações, vendas e VGV "
+    "(sempre considerando a ÚLTIMA data base da planilha, sem contar venda duplicada do mesmo cliente)."
 )
 
 # ---------------------------------------------------------
@@ -44,13 +44,27 @@ def carregar_dados():
     # Padroniza nomes de colunas
     df.columns = [c.strip().upper() for c in df.columns]
 
-    # Data
+    # DATA (dia do movimento)
     if "DATA" in df.columns:
         df["DIA"] = limpar_para_data(df["DATA"])
     elif "DIA" in df.columns:
         df["DIA"] = limpar_para_data(df["DIA"])
     else:
         df["DIA"] = pd.NaT
+
+    # DATA BASE (data de fechamento / foto da base)
+    possiveis_data_base = ["DATA BASE", "DATA_BASE", "DT BASE", "DATABASE"]
+    col_db = None
+    for c in possiveis_data_base:
+        if c in df.columns:
+            col_db = c
+            break
+
+    if col_db is not None:
+        df["DATA_BASE"] = limpar_para_data(df[col_db])
+    else:
+        # fallback: se não tiver coluna específica, usa o próprio DIA
+        df["DATA_BASE"] = df["DIA"]
 
     # Equipe / Corretor
     for col in ["EQUIPE", "CORRETOR"]:
@@ -145,67 +159,56 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
+# IDENTIFICA A ÚLTIMA DATA BASE
+# ---------------------------------------------------------
+datas_base_validas = df["DATA_BASE"].dropna()
+if datas_base_validas.empty:
+    data_base_max = None
+else:
+    data_base_max = datas_base_validas.max()
+
+# ---------------------------------------------------------
 # SIDEBAR – FILTROS
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
-dias_validos = pd.Series(df["DIA"].dropna())
-
-if not dias_validos.empty:
-    data_max = dias_validos.max()
-    data_min = dias_validos.min()
+if data_base_max is not None:
+    st.sidebar.markdown(
+        f"**Data base utilizada:** {data_base_max.strftime('%d/%m/%Y')}"
+    )
 else:
-    data_max = date.today()
-    data_min = data_max - timedelta(days=365)
-
-# Período padrão = últimos 30 dias com base na maior data da base
-default_ini = data_max - timedelta(days=30)
-if default_ini < data_min:
-    default_ini = data_min
-
-if "periodo_filtro" not in st.session_state:
-    st.session_state["periodo_filtro"] = (default_ini, data_max)
-
-periodo = st.sidebar.date_input(
-    "Período (padrão = últimos 30 dias)",
-    value=st.session_state["periodo_filtro"],
-    min_value=data_min,
-    max_value=data_max,
-)
-
-st.session_state["periodo_filtro"] = periodo
-
-if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
-    data_ini, data_fim = periodo
-else:
-    data_ini, data_fim = default_ini, data_max
+    st.sidebar.markdown("**Data base utilizada:** não encontrada na planilha")
 
 # Filtro de equipe
 lista_equipes = sorted(df["EQUIPE"].dropna().unique())
 equipe_sel = st.sidebar.selectbox("Equipe (opcional)", ["Todas"] + lista_equipes)
 
 # ---------------------------------------------------------
-# APLICA FILTROS DE PERÍODO / EQUIPE
+# APLICA FILTRO DE DATA BASE E EQUIPE
 # ---------------------------------------------------------
-df_periodo = df.copy()
-dia_series_all = limpar_para_data(df_periodo["DIA"])
-mask = (dia_series_all >= data_ini) & (dia_series_all <= data_fim)
-df_periodo = df_periodo[mask]
+df_base = df.copy()
+
+if data_base_max is not None:
+    df_base = df_base[df_base["DATA_BASE"] == data_base_max]
 
 if equipe_sel != "Todas":
-    df_periodo = df_periodo[df_periodo["EQUIPE"] == equipe_sel]
+    df_base = df_base[df_base["EQUIPE"] == equipe_sel]
 
-registros_filtrados = len(df_periodo)
+registros_filtrados = len(df_base)
 
-st.caption(
-    f"Período filtrado: **{data_ini.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim.strftime('%d/%m/%Y')}** • Registros: **{registros_filtrados}**"
-)
+if data_base_max is not None:
+    st.caption(
+        f"Data base considerada: **{data_base_max.strftime('%d/%m/%Y')}** • "
+        f"Registros: **{registros_filtrados}**"
+    )
+else:
+    st.caption(f"Registros considerados: **{registros_filtrados}**")
+
 if equipe_sel != "Todas":
     st.caption(f"Equipe filtrada: **{equipe_sel}**")
 
-if df_periodo.empty:
-    st.warning("Nenhum registro no período selecionado.")
+if df_base.empty:
+    st.warning("Nenhum registro encontrado para a última data base com os filtros selecionados.")
     st.stop()
 
 # ---------------------------------------------------------
@@ -221,7 +224,7 @@ def conta_aprovacoes(s):
 # BASE PARA ANÁLISE / APROVAÇÃO (POR LINHA)
 # ---------------------------------------------------------
 base_analise = (
-    df_periodo
+    df_base
     .groupby("CORRETOR")
     .agg(
         ANALISES=("STATUS_BASE", conta_analises),
@@ -233,10 +236,10 @@ base_analise = (
 # ---------------------------------------------------------
 # BASE PARA VENDAS / VGV (POR CLIENTE – ANTI-DUPLICIDADE)
 # ---------------------------------------------------------
-# Ordena por data para pegar a última linha de cada cliente no período
-df_ord = df_periodo.sort_values("DIA")
+# Ordena por data para pegar a última linha de cada cliente
+df_ord = df_base.sort_values("DIA")
 
-# Última movimentação de cada cliente no período
+# Última movimentação de cada cliente
 df_ult = (
     df_ord
     .dropna(subset=["CHAVE_CLIENTE"])
@@ -303,14 +306,17 @@ def format_posicao(pos):
 
 rank_cor["POSICAO"] = rank_cor["POSICAO_NUM"].apply(format_posicao)
 
-# Reorganiza colunas
+# ---------------------------------------------------------
+# REORGANIZA COLUNAS PARA FICAR IGUAL AO PRINT
+# POSICAO | CORRETOR | VGV | VENDAS | ANALISES | APROVACOES | TAXA_APROV_ANALISES | TAXA_VENDAS_ANALISES
+# ---------------------------------------------------------
 colunas_ordem = [
     "POSICAO",
     "CORRETOR",
+    "VGV",
+    "VENDAS",
     "ANALISES",
     "APROVACOES",
-    "VENDAS",
-    "VGV",
     "TAXA_APROV_ANALISES",
     "TAXA_VENDAS_ANALISES",
 ]
@@ -372,8 +378,12 @@ styled_rank = (
     .apply(zebra_rows, axis=1)
     .apply(highlight_top3, axis=1)
     .set_properties(
-        subset=["POSICAO", "ANALISES", "APROVACOES", "VENDAS"],
+        subset=["POSICAO", "VENDAS", "ANALISES", "APROVACOES"],
         **{"text-align": "center"},
+    )
+    .set_properties(
+        subset=["CORRETOR"],
+        **{"text-align": "left"},
     )
     .set_properties(
         subset=["VGV", "TAXA_APROV_ANALISES", "TAXA_VENDAS_ANALISES"],
@@ -390,7 +400,8 @@ st.dataframe(
 # ---------------------------------------------------------
 # GRÁFICO – VGV POR CORRETOR
 # ---------------------------------------------------------
-st.markdown("#### 💰 VGV por corretor (período filtrado)")
+st.markdown("#### 💰 VGV por corretor (última data base)")
+
 
 chart_vgv = (
     alt.Chart(rank_cor)
@@ -415,7 +426,8 @@ st.altair_chart(chart_vgv, use_container_width=True)
 
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
-    "Ranking por corretor baseado em análises, aprovações, vendas (1 por cliente) e VGV."
+    "Ranking por corretor baseado na ÚLTIMA data base da planilha, considerando análises, aprovações, "
+    "vendas (1 por cliente) e VGV."
     "</p>",
     unsafe_allow_html=True,
 )

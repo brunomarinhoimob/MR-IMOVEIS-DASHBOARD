@@ -233,7 +233,7 @@ if df_em_analise_atual.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# BARRA LATERAL – BUSCA (NOME / CPF) + EQUIPE
+# BARRA LATERAL – BUSCA (NOME / CPF)
 # ---------------------------------------------------------
 st.sidebar.title("Busca de clientes em análise 🔎")
 
@@ -253,10 +253,11 @@ st.sidebar.caption(
 )
 
 # ---------------------------------------------------------
-# SELETOR DE PERÍODO
+# SELETOR DE PERÍODO + FILTRO POR EQUIPE (NO TOPO, IGUAL PENDÊNCIAS)
 # ---------------------------------------------------------
-st.markdown("### 📅 Período de análise")
+st.markdown("### 📅 Período das análises")
 
+# Período (dias)
 periodo = st.radio(
     "Selecione o período (dias):",
     [7, 15, 30, 60, 90],
@@ -275,11 +276,10 @@ if df_em_analise_periodo.empty:
     st.info(f"Não há clientes em análise nos últimos {periodo} dias.")
     st.stop()
 
-# ---------------------------------------------------------
-# FILTRO POR EQUIPE (AGORA NA LATERAL)
-# ---------------------------------------------------------
+# Filtro por equipe (na área principal)
 df_filtrado = df_em_analise_periodo.copy()
 
+st.markdown("Filtrar por equipe:")
 if "EQUIPE" in df_em_analise_periodo.columns:
     equipes = (
         df_em_analise_periodo["EQUIPE"]
@@ -290,11 +290,8 @@ if "EQUIPE" in df_em_analise_periodo.columns:
         .tolist()
     )
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Filtro por equipe")
-
-    equipe_sel = st.sidebar.selectbox(
-        "Equipe:",
+    equipe_sel = st.selectbox(
+        "",
         options=["Todas"] + equipes,
         index=0,
     )
@@ -310,8 +307,17 @@ if df_filtrado.empty:
     st.info("Nenhum cliente em análise dentro desse filtro.")
     st.stop()
 
+# Cards gerais do período (estilo Clientes com Pendência)
+total_atual = len(df_filtrado)
+equipes_com_analise = df_filtrado["EQUIPE"].nunique()
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Total em Análise (atual)", total_atual)
+c2.metric("Período (dias)", int(periodo))
+c3.metric("Equipes com clientes em análise", int(equipes_com_analise))
+
 # ---------------------------------------------------------
-# KPIs GERAIS
+# KPIs GERAIS (DETALHAMENTO EM / RE)
 # ---------------------------------------------------------
 total = len(df_filtrado)
 qtd_em = (df_filtrado["STATUS_BASE"] == "EM ANÁLISE").sum()
@@ -323,7 +329,7 @@ k2.metric("Em Análise", int(qtd_em))
 k3.metric("Reanálise", int(qtd_re))
 
 # ---------------------------------------------------------
-# DETALHES POR CLIENTE (CARDS) – ENTRE KPIs E TABELA
+# DETALHES POR CLIENTE (CARDS)
 # ---------------------------------------------------------
 # Só mostra cards se o usuário digitou algo na busca
 if termo_busca.strip():
@@ -380,7 +386,10 @@ if termo_busca.strip():
                 APROVACOES=("STATUS_BASE", conta_aprovacoes),
                 VENDAS=("STATUS_BASE", conta_vendas),
                 VGV=("VGV", "sum"),
-                ULT_STATUS=("SITUACAO_ORIGINAL", lambda x: x.iloc[-1] if len(x) > 0 else ""),
+                ULT_STATUS=(
+                    "SITUACAO_ORIGINAL",
+                    lambda x: x.iloc[-1] if len(x) > 0 else "",
+                ),
                 ULT_DATA=("DIA", lambda x: x.max()),
             )
             .reset_index()
@@ -411,7 +420,9 @@ if termo_busca.strip():
                 return t.isdigit()
 
             # Cards (mesmo layout da página Clientes MR)
-            for _, row in resumo.sort_values(["VENDAS", "VGV"], ascending=False).iterrows():
+            for _, row in resumo.sort_values(
+                ["VENDAS", "VGV"], ascending=False
+            ).iterrows():
                 chave = row["CHAVE_CLIENTE"]
                 df_cli = df_resultado[df_resultado["CHAVE_CLIENTE"] == chave].copy()
 
@@ -471,6 +482,7 @@ if termo_busca.strip():
 
                 m4, m5, m6 = st.columns(3)
                 m4.metric("Aprovações", int(row["APROVACOES"]))
+
                 m5.metric("Vendas", int(row["VENDAS"]))
                 m6.metric(
                     "VGV total",

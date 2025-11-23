@@ -958,6 +958,85 @@ else:
                 hide_index=True,
             )
 
+st.markdown("---")
+
+# ---------------------------------------------------------
+# RANKINGS – MESMA ESTRUTURA ORIGINAL
+# ---------------------------------------------------------
+st.markdown(
+    """
+    <div class="section-title">
+        🏆 Rankings de Corretores
+        <span class="badge-chip">Produção no período</span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+if df_merge.empty:
+    st.info("Sem dados para montar rankings com os filtros atuais.")
+else:
+    df_rank_base = df_merge.copy()
+    df_rank_base["VGV"] = df_rank_base["VGV"].fillna(0.0)
+
+    col_r1, col_r2, col_r3 = st.columns(3)
+
+    # -------------------------- TOP VENDAS --------------------------
+    with col_r1:
+        st.markdown(
+            '<p class="section-subtitle"><span class="good-text">Top por Vendas</span></p>',
+            unsafe_allow_html=True,
+        )
+        top_vendas = df_rank_base.sort_values(
+            "VENDAS", ascending=False
+        ).head(10)
+
+        if top_vendas.empty:
+            st.caption("Sem vendas no período.")
+        else:
+            st.dataframe(
+                top_vendas[["NOME_CRM", "EQUIPE", "VENDAS", "ANALISES_EM"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    # -------------------------- TOP VGV --------------------------
+    with col_r2:
+        st.markdown(
+            '<p class="section-subtitle"><span class="good-text">Top por VGV</span></p>',
+            unsafe_allow_html=True,
+        )
+        top_vgv = df_rank_base.sort_values("VGV", ascending=False).head(10)
+
+        if top_vgv.empty:
+            st.caption("Sem VGV registrado no período.")
+        else:
+            df_show = top_vgv[["NOME_CRM", "EQUIPE", "VGV", "VENDAS"]].copy()
+            st.dataframe(
+                df_show,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    # -------------------------- TOP ANÁLISES EM --------------------------
+    with col_r3:
+        st.markdown(
+            '<p class="section-subtitle"><span class="good-text">Top por Análises (só EM)</span></p>',
+            unsafe_allow_html=True,
+        )
+        top_analises = df_rank_base.sort_values(
+            "ANALISES_EM", ascending=False
+        ).head(10)
+
+        if top_analises.empty:
+            st.caption("Sem análises EM ANÁLISE no período.")
+        else:
+            st.dataframe(
+                top_analises[["NOME_CRM", "EQUIPE", "ANALISES_EM", "VENDAS"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
 st.markdown(
     """
     <p class="small-caption">

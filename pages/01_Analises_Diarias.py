@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from streamlit_autorefresh import st_autorefresh
 from datetime import date, datetime, timedelta
 
 # ---------------------------------------------------------
@@ -39,6 +40,7 @@ SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
+
 @st.cache_data(ttl=60)
 def carregar_planilha():
     df = pd.read_csv(URL)
@@ -68,6 +70,7 @@ def carregar_planilha():
 
     return df
 
+
 df = carregar_planilha()
 
 # ---------------------------------------------------------
@@ -90,14 +93,26 @@ df_em_analise = df_dia[df_dia["STATUS_BASE"] == "EM ANÁLISE"]
 qtde_total_dia = len(df_em_analise)
 
 # ---------------------------------------------------------
-# FRASE ESPECIAL (SEM “VERSÃO 1”)
+# REFRESH AUTOMÁTICO E FRASE ESPECIAL
 # ---------------------------------------------------------
-st.markdown(
-    f"""
-    ### 🚀 No dia {dia_selecionado.strftime('%d/%m/%Y')}, nossa equipe já registrou **{qtde_total_dia} análises EM ANÁLISE!**
-    Acelerando rumo às metas! 🔥
-    """
-)
+# Atualiza a página automaticamente a cada 30 segundos
+st_autorefresh(interval=30 * 1000, key="analises_diarias_refresh")
+
+col_left, col_right = st.columns([3, 1])
+
+with col_left:
+    st.markdown(
+        f"""
+        ### 🚀 No dia {dia_selecionado.strftime('%d/%m/%Y')}, nossa equipe já registrou **{qtde_total_dia} análises!**
+        Acelerando rumo às metas! 🔥
+        """
+    )
+
+with col_right:
+    try:
+        st.image("logo_mr.png", use_container_width=True)
+    except Exception:
+        pass
 
 # ---------------------------------------------------------
 # CARD TOTAL
@@ -130,4 +145,4 @@ with col2:
 # RODAPÉ
 # ---------------------------------------------------------
 st.markdown("---")
-st.caption("Dashboard MR Imóveis • Atualizado automaticamente • Gestão à Vista")
+st.caption("Dashboard MR Imóveis • Atualizado automaticamente")

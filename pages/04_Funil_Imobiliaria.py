@@ -263,6 +263,35 @@ media_leads_por_analise = None
 if (total_leads_periodo is not None) and total_leads_periodo > 0 and analises_em > 0:
     media_leads_por_analise = total_leads_periodo / analises_em
 
+# ---------- NOVOS KPI's ----------
+# 1) IPC: vendas / corretores ativos nos últimos 30 dias (imobiliária inteira)
+corretores_ativos_30 = 0
+ipc_val = None
+
+dias_all = df["DIA"].dropna()
+if not dias_all.empty:
+    data_max_all = dias_all.max()
+    inicio_30 = data_max_all - timedelta(days=30)
+    df_30d = df[(df["DIA"] >= inicio_30) & (df["DIA"] <= data_max_all)].copy()
+    corretores_ativos_30 = df_30d["CORRETOR"].dropna().nunique()
+
+if corretores_ativos_30 > 0:
+    ipc_val = vendas_total / corretores_ativos_30
+
+# 2) Equipe produtiva: % de corretores que venderam no período
+corretores_totais_periodo = df_periodo["CORRETOR"].dropna().nunique()
+corretores_com_venda_periodo = (
+    df_vendas_unicas_periodo["CORRETOR"].dropna().nunique()
+    if not df_vendas_unicas_periodo.empty
+    else 0
+)
+equipe_produtiva_pct = (
+    (corretores_com_venda_periodo / corretores_totais_periodo) * 100
+    if corretores_totais_periodo > 0
+    else 0
+)
+
+# ---------- MÉTRICAS VISUAIS ----------
 col_leads_card, col1, col2, col3, col4, col5 = st.columns(6)
 with col_leads_card:
     st.metric("Leads (CRM)", "-" if total_leads_periodo is None else total_leads_periodo)
@@ -277,23 +306,44 @@ with col4:
 with col5:
     st.metric("Vendas (Total)", vendas_total)
 
-col_vgv, col_t1, col_t2, col_t3 = st.columns(4)
+col_vgv, col_ipc, col_t1, col_t2 = st.columns(4)
 with col_vgv:
     st.metric("VGV Total", format_currency(vgv_total))
+with col_ipc:
+    st.metric(
+        "IPC (vendas/corretor - 30 dias)",
+        f"{ipc_val:.2f}" if ipc_val is not None else "—",
+        help=(
+            "Soma das vendas do período filtrado dividida pela quantidade "
+            "de corretores ativos na imobiliária nos últimos 30 dias."
+        ),
+    )
 with col_t1:
     st.metric("Taxa Aprov./Análises (só EM)", f"{taxa_aprov_analise:.1f}%")
 with col_t2:
     st.metric("Taxa Vendas/Análises (só EM)", f"{taxa_venda_analise:.1f}%")
-with col_t3:
-    if media_leads_por_analise is not None:
-        st.metric("Média leads por análise", f"{media_leads_por_analise:.1f}")
-    else:
-        st.metric("Média leads por análise", "—")
 
-col_tx_va, = st.columns(1)
+col_tx_va, col_eq_prod = st.columns(2)
 with col_tx_va:
     st.metric("Taxa Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
+with col_eq_prod:
+    st.metric(
+        "Equipe produtiva",
+        f"{equipe_produtiva_pct:.1f}%",
+        help=(
+            "Porcentagem de corretores que fizeram pelo menos 1 venda "
+            "no período filtrado."
+        ),
+    )
 
+if media_leads_por_analise is not None:
+    st.caption(f"Média de {media_leads_por_analise:.1f} leads por análise (só EM).")
+else:
+    st.caption("Média de leads por análise indisponível para o período selecionado.")
+
+# ---------------------------------------------------------
+# TABELA + GRÁFICO DO FUNIL GERAL
+# ---------------------------------------------------------
 df_funil_geral = pd.DataFrame(
     {
         "Etapa": ["Análises (só EM)", "Aprovações", "Vendas"],

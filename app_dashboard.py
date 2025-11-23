@@ -159,16 +159,16 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# LEADS – API SUPREMO (AGORA COM CACHE)
+# LEADS – API SUPREMO (AGORA COM CACHE 1 HORA)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
     """
     Carrega leads da API do Supremo.
-    Cache de 5 minutos para evitar múltiplas chamadas pesadas.
+    Cache de 1 hora para evitar múltiplas chamadas pesadas.
     """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 

@@ -65,7 +65,12 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
     return dt.dt.date
 
 
+@st.cache_data(ttl=300)
 def carregar_dados_planilha() -> pd.DataFrame:
+    """
+    Carrega e trata a base da planilha do Google Sheets.
+    Cache de 5 minutos para não ficar batendo toda hora na planilha.
+    """
     df = pd.read_csv(CSV_URL)
     df.columns = [c.strip().upper() for c in df.columns]
 
@@ -92,8 +97,11 @@ def carregar_dados_planilha() -> pd.DataFrame:
 
     # STATUS BASE
     possiveis_cols_situacao = [
-        "SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS",
-        "SITUACAO", "SITUACAO ATUAL"
+        "SITUAÇÃO",
+        "SITUAÇÃO ATUAL",
+        "STATUS",
+        "SITUACAO",
+        "SITUACAO ATUAL",
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
@@ -151,12 +159,17 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# LEADS – API SUPREMO (SEM CACHE)
+# LEADS – API SUPREMO (AGORA COM CACHE)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
 
+@st.cache_data(ttl=300)
 def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFrame:
+    """
+    Carrega leads da API do Supremo.
+    Cache de 5 minutos para evitar múltiplas chamadas pesadas.
+    """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
     dfs = []
@@ -215,7 +228,7 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 
 df_leads = carregar_leads_direto()
 
-# Mantém em sessão para reuso interno
+# Mantém em sessão para reuso interno (se precisar em outra parte do app)
 if "df_leads" not in st.session_state:
     st.session_state["df_leads"] = df_leads
 

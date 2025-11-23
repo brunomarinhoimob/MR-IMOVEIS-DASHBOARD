@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-from datetime import date, timedelta
+from datetime import timedelta
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
+# (Em app multipage, isso aqui só é considerado se não tiver no app principal)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Ranking por Corretor – MR Imóveis",
@@ -25,14 +26,14 @@ CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&
 # ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
 # ---------------------------------------------------------
-def limpar_para_data(serie):
+def limpar_para_data(serie: pd.Series) -> pd.Series:
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
 # ---------------------------------------------------------
 # CARREGAR DADOS
 # ---------------------------------------------------------
-def carregar_dados():
+def carregar_dados() -> pd.DataFrame:
     df = pd.read_csv(CSV_URL)
 
     # Padroniza nomes de colunas
@@ -45,21 +46,6 @@ def carregar_dados():
         df["DIA"] = limpar_para_data(df["DIA"])
     else:
         df["DIA"] = pd.NaT
-
-    # DATA BASE (para consolidar o ranking)
-    # Tenta achar qualquer coluna que contenha as palavras DATA e BASE
-    col_data_base = None
-    for c in df.columns:
-        if "DATA" in c and "BASE" in c:
-            col_data_base = c
-            break
-
-    if col_data_base is not None:
-        df["DATA_BASE"] = limpar_para_data(df[col_data_base])
-    else:
-        # fallback: se não tiver coluna de data base explícita,
-        # usa o próprio DIA como data base para não quebrar o ranking
-        df["DATA_BASE"] = df["DIA"]
 
     # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
@@ -82,11 +68,7 @@ def carregar_dados():
         "SITUACAO",
         "SITUACAO ATUAL",
     ]
-    col_situacao = None
-    for c in possiveis_cols_situacao:
-        if c in df.columns:
-            col_situacao = c
-            break
+    col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
     if col_situacao is not None:
@@ -108,17 +90,8 @@ def carregar_dados():
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
-    col_nome = None
-    for c in possiveis_nome:
-        if c in df.columns:
-            col_nome = c
-            break
-
-    col_cpf = None
-    for c in possiveis_cpf:
-        if c in df.columns:
-            col_cpf = c
-            break
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
     if col_nome is None:
         df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
@@ -148,34 +121,37 @@ if df.empty:
     st.error("Erro ao carregar planilha.")
     st.stop()
 
+# Garante que temos pelo menos algumas datas válidas
+dias_validos = df["DIA"].dropna()
+if dias_validos.empty:
+    st.error("Não foi possível identificar datas válidas na planilha.")
+    st.stop()
+
 # ---------------------------------------------------------
-# SIDEBAR – FILTROS
+# SIDEBAR – FILTROS (PERÍODO + EQUIPE)
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
-# Data base: pega todas as datas distintas e usa a última como padrão
-datas_base_validas = (
-    pd.Series(df["DATA_BASE"].dropna().unique())
-    .sort_values()
-    .tolist()
-)
+data_min = dias_validos.min()
+data_max = dias_validos.max()
+data_ini_default = max(data_min, data_max - timedelta(days=30))
 
-if not datas_base_validas:
-    st.error("Nenhuma DATA BASE encontrada na planilha (nem como fallback).")
-    st.stop()
-
-data_base_sel = st.sidebar.selectbox(
-    "Data base",
-    options=datas_base_validas,
-    index=len(datas_base_validas) - 1,
-    format_func=lambda d: d.strftime("%d/%m/%Y") if not pd.isna(d) else "-",
+periodo = st.sidebar.date_input(
+    "Período (DIA)",
+    value=(data_ini_default, data_max),
+    min_value=data_min,
+    max_value=data_max,
 )
+data_ini, data_fim = periodo
 
 lista_equipes = sorted(df["EQUIPE"].unique())
 equipe_sel = st.sidebar.selectbox("Equipe (opcional)", ["Todas"] + lista_equipes)
 
-# Filtra pela data base selecionada
-df_ref = df[df["DATA_BASE"] == data_base_sel].copy()
+# Filtra pela janela de datas selecionada
+df_ref = df[
+    (df["DIA"] >= data_ini) &
+    (df["DIA"] <= data_fim)
+].copy()
 
 if equipe_sel != "Todas":
     df_ref = df_ref[df_ref["EQUIPE"] == equipe_sel]
@@ -183,7 +159,7 @@ if equipe_sel != "Todas":
 registros_ref = len(df_ref)
 
 st.caption(
-    f"Filtro: DATA BASE = {data_base_sel.strftime('%d/%m/%Y')}"
+    f"Período: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
     + ("" if equipe_sel == "Todas" else f" • Equipe: {equipe_sel}")
     + f" • Registros na base: {registros_ref}"
 )
@@ -287,16 +263,16 @@ for i in range(len(ranking)):
 
 ranking["POSICAO"] = posicoes
 
-# Formatação para exibição
-def formata_moeda(v):
+# ---------------------------------------------------------
+# FORMATAÇÃO
+# ---------------------------------------------------------
+def formata_moeda(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 ranking["VGV_FMT"] = ranking["VGV"].apply(formata_moeda)
 ranking["TAXA_APROV_ANALISES_FMT"] = ranking["TAXA_APROV_ANALISES"].map(lambda v: f"{v:.1f}%")
 ranking["TAXA_VENDAS_ANALISES_FMT"] = ranking["TAXA_VENDAS_ANALISES"].map(lambda v: f"{v:.1f}%")
 
-# Reordena colunas para ficar igual ao layout do print:
-# POSIÇÃO | CORRETOR | VGV | VENDAS | ANALISES | APROVACOES | TAXA_APROV_ANALISES | TAXA_VENDAS_ANALISES
 ranking_exibe = ranking[
     [
         "POSICAO",
@@ -361,7 +337,7 @@ st.altair_chart(chart, use_container_width=True)
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
     "Ranking por corretor baseado em análises, aprovações, vendas (1 por cliente) e VGV, "
-    "filtrado pela DATA BASE selecionada."
+    "filtrado pelo período selecionado."
     "</p>",
     unsafe_allow_html=True,
 )

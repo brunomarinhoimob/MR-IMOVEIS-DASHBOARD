@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
+from streamlit_autorefresh import st_autorefresh
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -10,6 +11,9 @@ st.set_page_config(
     page_icon="📅",
     layout="wide",
 )
+
+# AUTO-REFRESH DISCRETO (30 SEGUNDOS)
+st_autorefresh(interval=30 * 1000, key="analises_refresh")
 
 # ---------------------------------------------------------
 # ESTILO / CSS
@@ -121,14 +125,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Meta refresh para TV (30 segundos)
-st.markdown(
-    """
-    <meta http-equiv="refresh" content="30">
-    """,
-    unsafe_allow_html=True,
-)
-
 # ---------------------------------------------------------
 # CONSTANTES – PLANILHA
 # ---------------------------------------------------------
@@ -146,16 +142,11 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
 
 
 def carregar_dados() -> pd.DataFrame:
-    """
-    Carrega a base diretamente da planilha (sem cache).
-    Essa tela é para TV, então a atualização é em tempo quase real.
-    """
+    """Carrega a base em tempo real – sem cache."""
     df = pd.read_csv(CSV_URL)
-
-    # Padroniza nomes das colunas
     df.columns = [c.strip().upper() for c in df.columns]
 
-    # DATA / DIA
+    # DATA
     if "DATA" in df.columns:
         df["DIA"] = limpar_para_data(df["DATA"])
     elif "DIA" in df.columns:
@@ -176,7 +167,7 @@ def carregar_dados() -> pd.DataFrame:
         else:
             df[col] = "NÃO INFORMADO"
 
-    # SITUAÇÃO BASE
+    # STATUS
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -184,13 +175,12 @@ def carregar_dados() -> pd.DataFrame:
         "SITUACAO",
         "SITUACAO ATUAL",
     ]
-    col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
+    col_sit = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
-    if col_situacao:
-        status = df[col_situacao].fillna("").astype(str).str.upper()
-        df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        # As demais situações até podem existir, mas não são usadas neste painel
+    if col_sit:
+        s = df[col_sit].fillna("").astype(str).str.upper()
+        df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
 
     return df
 
@@ -202,10 +192,6 @@ def formatar_data_br(d: date) -> str:
 
 
 def criar_coluna_rank(n: int) -> list:
-    """
-    Gera uma lista de textos de classificação com medalhas para o TOP 3.
-    1 -> 🥇 1º, 2 -> 🥈 2º, 3 -> 🥉 3º, demais -> "4º", "5º"...
-    """
     ranks = []
     for i in range(n):
         pos = i + 1
@@ -235,14 +221,9 @@ if df.empty:
 st.sidebar.title("Filtro do dia 📅")
 
 dias_validos = df["DIA"].dropna()
-if dias_validos.empty:
-    st.warning("Ainda não há datas válidas na base.")
-    st.stop()
-
 data_min = dias_validos.min()
 data_max = dias_validos.max()
 
-# Dia padrão: último dia disponível na base
 dia_default = data_max
 
 dia_selecionado = st.sidebar.date_input(
@@ -256,12 +237,12 @@ dia_selecionado = st.sidebar.date_input(
 # FILTRAR BASE PARA O DIA
 # ---------------------------------------------------------
 df_dia = df[df["DIA"] == dia_selecionado].copy()
+df_em_analise = df_dia[df_dia["STATUS_BASE"] == "EM ANÁLISE"]
 
-# Apenas EM ANÁLISE (sem considerar reanálise)
-df_em_analise = df_dia[df_dia["STATUS_BASE"] == "EM ANÁLISE"].copy()
+total_analises = len(df_em_analise)
 
 # ---------------------------------------------------------
-# CABEÇALHO – BANNER
+# CABEÇALHO
 # ---------------------------------------------------------
 col_top_left, col_top_right = st.columns([3, 1])
 
@@ -274,7 +255,7 @@ with col_top_left:
             </div>
             <p class="top-banner-subtitle">
                 Dia <strong>{formatar_data_br(dia_selecionado)}</strong> • 
-                Atualiza automaticamente a cada <strong>30 segundos</strong> para acompanhamento em TV.
+                Atualização automática a cada <strong>30 segundos</strong>.
             </p>
         </div>
         """,
@@ -283,21 +264,19 @@ with col_top_left:
 
 with col_top_right:
     try:
-        st.image("logo_mr.png", use_column_width=True)
-    except Exception:
+        st.image("logo_mr.png", use_container_width=True)
+    except:
         pass
 
 # ---------------------------------------------------------
-# SE NÃO TIVER ANÁLISES NO DIA
+# CASO NÃO TENHA ANÁLISES NO DIA
 # ---------------------------------------------------------
-total_analises = len(df_em_analise)
-
 if total_analises == 0:
     st.markdown(
         """
         <p class="motivational-text">
-        Ainda não temos análises cadastradas em <strong>EM ANÁLISE</strong> para este dia.
-        Assim que subir a primeira análise, o painel acende na TV. 😉
+            Ainda não temos análises em <strong>EM ANÁLISE</strong> para este dia.
+            Assim que a primeira subir, o painel acende. 😉
         </p>
         """,
         unsafe_allow_html=True,
@@ -313,8 +292,8 @@ corretores_ativos = df_em_analise["CORRETOR"].nunique()
 st.markdown(
     f"""
     <p class="motivational-text">
-        Hoje já registramos <span class="number">{total_analises}</span> análises em 
-        <strong>EM ANÁLISE</strong>. Ritmo de foguete rumo à meta! 🚀
+        Hoje já registramos <span class="number">{total_analises}</span> análises.
+        Ritmo de foguete rumo à meta! 🚀
     </p>
     """,
     unsafe_allow_html=True,
@@ -359,82 +338,55 @@ with m3:
     )
 
 # ---------------------------------------------------------
-# RANKINGS – EQUIPES E CORRETORES
+# RANKINGS
 # ---------------------------------------------------------
-st.markdown("")
-
 col_eq, col_cor = st.columns(2)
 
-# -------------------- EQUIPES ----------------------------
+# EQUIPES
 with col_eq:
     st.markdown(
         """
         <div class="rank-header">
-            <div class="section-title">📌 Análises por Equipe (no dia)</div>
-            <span class="badge">Top equipes em EM ANÁLISE</span>
+            <div class="section-title">📌 Análises por Equipe</div>
+            <span class="badge">Top equipes</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     df_equipes = df_em_analise.groupby("EQUIPE").size().reset_index(name="ANÁLISES")
-    df_equipes = df_equipes.sort_values("ANÁLISES", ascending=False).reset_index(
-        drop=True
-    )
-
+    df_equipes = df_equipes.sort_values("ANÁLISES", ascending=False).reset_index(drop=True)
     df_equipes.insert(0, "POSIÇÃO", criar_coluna_rank(len(df_equipes)))
-    df_equipes = df_equipes.rename(
-        columns={
-            "EQUIPE": "Equipe",
-            "ANÁLISES": "Análises no dia",
-        }
-    )
 
-    st.dataframe(
-        df_equipes,
-        use_container_width=True,
-        hide_index=True,
-    )
+    df_equipes = df_equipes.rename(columns={"EQUIPE": "Equipe", "ANÁLISES": "Análises no dia"})
 
-# -------------------- CORRETORES -------------------------
+    st.dataframe(df_equipes, use_container_width=True, hide_index=True)
+
+# CORRETORES
 with col_cor:
     st.markdown(
         """
         <div class="rank-header">
-            <div class="section-title">👥 Ranking de Corretores (no dia)</div>
-            <span class="badge">Quem está puxando as análises</span>
+            <div class="section-title">👥 Ranking de Corretores</div>
+            <span class="badge">Destaques do dia</span>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    df_corretor = (
-        df_em_analise.groupby("CORRETOR")
-        .size()
-        .reset_index(name="ANÁLISES")
-    )
-    df_corretor = df_corretor.sort_values("ANÁLISES", ascending=False).reset_index(
-        drop=True
-    )
-
+    df_corretor = df_em_analise.groupby("CORRETOR").size().reset_index(name="ANÁLISES")
+    df_corretor = df_corretor.sort_values("ANÁLISES", ascending=False).reset_index(drop=True)
     df_corretor.insert(0, "POSIÇÃO", criar_coluna_rank(len(df_corretor)))
-    df_corretor = df_corretor.rename(
-        columns={
-            "CORRETOR": "Corretor",
-            "ANÁLISES": "Análises no dia",
-        }
-    )
 
-    st.dataframe(
-        df_corretor,
-        use_container_width=True,
-        hide_index=True,
-    )
+    df_corretor = df_corretor.rename(columns={"CORRETOR": "Corretor", "ANÁLISES": "Análises no dia"})
+
+    st.dataframe(df_corretor, use_container_width=True, hide_index=True)
+
 
 # ---------------------------------------------------------
 # RODAPÉ
 # ---------------------------------------------------------
 st.markdown("---")
 st.caption(
-    "Dashboard MR Imóveis • Tela de Gestão à Vista de Análises Diárias • Atualização automática a cada 30s"
+    "Dashboard MR Imóveis • Gestão à Vista • Atualização suave a cada 30s"
 )

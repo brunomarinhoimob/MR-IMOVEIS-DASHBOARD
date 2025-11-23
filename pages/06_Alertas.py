@@ -6,7 +6,7 @@ from datetime import timedelta, date
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Alertas – Operação Comercial",
+    page_title="Alertas – MR Imóveis",
     page_icon="🔴",
     layout="wide",
 )
@@ -19,7 +19,7 @@ with col_logo:
     try:
         st.image("logo_mr.png", use_column_width=True)
     except Exception:
-        pass  # Se a logo não existir, só ignora
+        pass  # se não achar a logo, só ignora
 
 st.markdown(
     "Monitoramento de **corretores**, **clientes em pendência** e "
@@ -27,11 +27,12 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA  (MESMO DO APP PRINCIPAL)
+# CONFIG: LINK DA PLANILHA
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
+
 
 # ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
@@ -95,7 +96,6 @@ def carregar_dados():
         df.loc[status.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        # Mapeia qualquer coisa com "PENDEN" como pendência
         df.loc[status.str.contains("PENDEN"), "STATUS_BASE"] = "PENDÊNCIA"
 
     # NOME / CPF BASE (para chave do cliente)
@@ -130,7 +130,6 @@ def carregar_dados():
 
 
 df = carregar_dados()
-:contentReference[oaicite:0]{index=0}
 
 if df.empty:
     st.error("Não foi possível carregar dados da planilha. Verifique o link/gid.")
@@ -161,67 +160,51 @@ if pd.isna(data_ref_geral_ts):
 data_ref_geral = data_ref_geral_ts.date()
 
 # ---------------------------------------------------------
-# 1) ALERTA: CORRETORES SEM ANÁLISE HÁ 3+ DIAS (JANELA 30 DIAS)
+# 1) CORRETORES SEM ANÁLISE HÁ 3+ DIAS (JANELA 30 DIAS)
 # ---------------------------------------------------------
 st.markdown("## 🧑‍💻 Corretores sem análises nos últimos 3 dias (janela de 30 dias)")
 
-# Considera apenas registros de ANÁLISE / REANÁLISE
 df_analise_base = df[df["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
 
 if df_analise_base.empty or df_analise_base["DIA"].isna().all():
     if equipe_sel == "Todas":
         st.info("Ainda não há análises registradas para calcular alertas.")
     else:
-        st.info(f"A equipe **{equipe_sel}** não possui análises registradas para cálculo de alertas.")
+        st.info(f"A equipe **{equipe_sel}** não possui análises registradas.")
 else:
-    # Converte a data de análise
-    dt_analise = pd.to_datetime(df_analise_base["DIA"], errors="coerce")
-    df_analise_base = df_analise_base.assign(DT_ANALISE=dt_analise)
-
-    # Data de referência = última data de análise da base filtrada
+    df_analise_base["DT_ANALISE"] = pd.to_datetime(df_analise_base["DIA"], errors="coerce")
     data_ref_ts = df_analise_base["DT_ANALISE"].max()
     data_ref = data_ref_ts.date() if not pd.isna(data_ref_ts) else data_ref_geral
 
     data_inicio_janela = data_ref - timedelta(days=30)
 
-    # Mantém somente análises dentro dos últimos 30 dias
     df_analise_30 = df_analise_base[
-        df_analise_30["DT_ANALISE"].dt.date >= data_inicio_janela
-    ] if not df_analise_base.empty else pd.DataFrame()
+        df_analise_base["DT_ANALISE"].dt.date >= data_inicio_janela
+    ].copy()
 
     if df_analise_30.empty:
-        msg_base = (
-            f"Não há análises nos últimos 30 dias (data de referência: "
-            f"{data_ref.strftime('%d/%m/%Y')})."
+        st.info(
+            f"Não há análises nos últimos 30 dias (data de referência: {data_ref.strftime('%d/%m/%Y')})."
         )
-        if equipe_sel != "Todas":
-            msg_base = f"A equipe **{equipe_sel}** não possui análises nos últimos 30 dias."
-        st.info(msg_base)
     else:
-        # Última análise (dentro da janela de 30 dias) por corretor
         ultima_analise_corretor = (
             df_analise_30.dropna(subset=["DT_ANALISE"])
             .groupby("CORRETOR", as_index=False)["DT_ANALISE"]
             .max()
         )
 
-        # Lista de todos os corretores da base (já filtrada pela equipe, se tiver)
         corretores_todos = sorted(df["CORRETOR"].dropna().unique().tolist())
 
         registros_alerta = []
-
         for corr in corretores_todos:
             linha = ultima_analise_corretor[ultima_analise_corretor["CORRETOR"] == corr]
-
             if linha.empty:
-                # esse corretor NÃO teve análise nos últimos 30 dias
-                # ou nunca analisou – fica de fora do alerta
+                # sem análise na janela de 30 dias => não alertar
                 continue
 
             ultima_dt = linha["DT_ANALISE"].iloc[0].date()
             dias_sem = (data_ref - ultima_dt).days
 
-            # entra no alerta apenas se estiver há 3 dias ou mais sem análise
             if dias_sem >= 3:
                 registros_alerta.append(
                     {
@@ -231,28 +214,17 @@ else:
                     }
                 )
 
-        if equipe_sel == "Todas":
-            sub_titulo = ""
-        else:
-            sub_titulo = f" – Equipe **{equipe_sel}**"
-
         st.caption(
             f"Data de referência considerada: **{data_ref.strftime('%d/%m/%Y')}**. "
-            f"A janela de análise é sempre os **últimos 30 dias**{sub_titulo}. "
+            "A janela de análise é sempre os **últimos 30 dias**. "
             "Entram aqui somente corretores que estão há **3 dias ou mais** sem subir análises, "
             "mas que ainda tiveram alguma análise dentro desses 30 dias."
         )
 
         if not registros_alerta:
-            if equipe_sel == "Todas":
-                st.success(
-                    "✅ Nenhum corretor está há 3 dias ou mais sem análises dentro da janela dos últimos 30 dias."
-                )
-            else:
-                st.success(
-                    f"✅ Nenhum corretor da equipe **{equipe_sel}** está há 3 dias ou mais "
-                    "sem análises dentro da janela dos últimos 30 dias."
-                )
+            st.success(
+                "✅ Nenhum corretor está há 3 dias ou mais sem análises dentro da janela dos últimos 30 dias."
+            )
         else:
             df_alerta = pd.DataFrame(registros_alerta).sort_values(
                 "DIAS SEM ANÁLISE (janela 30d)", ascending=False
@@ -276,17 +248,14 @@ st.markdown("---")
 st.markdown("## ⏳ Clientes em pendência há mais de 2 dias (última ação pendência)")
 
 df_pend_base = df.copy()
-dt_pend = pd.to_datetime(df_pend_base["DIA"], errors="coerce")
-df_pend_base = df_pend_base.assign(DT_BASE=dt_pend)
+df_pend_base["DT_BASE"] = pd.to_datetime(df_pend_base["DIA"], errors="coerce")
 
-# Chave de cliente
 df_pend_base["CHAVE_CLIENTE"] = (
     df_pend_base["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
     + " | "
     + df_pend_base["CPF_CLIENTE_BASE"].fillna("")
 )
 
-# Última ação por cliente
 df_last_acao = (
     df_pend_base.dropna(subset=["DT_BASE"])
     .sort_values("DT_BASE")
@@ -297,9 +266,7 @@ df_last_acao = (
 if df_last_acao.empty:
     st.info("Não foi possível identificar últimas ações dos clientes.")
 else:
-    # Filtra quem está com última ação = pendência e há 2+ dias
-    mask_pend = df_last_acao["STATUS_BASE"] == "PENDÊNCIA"
-    df_pendentes = df_last_acao[mask_pend].copy()
+    df_pendentes = df_last_acao[df_last_acao["STATUS_BASE"] == "PENDÊNCIA"].copy()
 
     if df_pendentes.empty:
         st.success("✅ Não há clientes com pendência como última ação.")
@@ -314,7 +281,6 @@ else:
         if df_pendentes.empty:
             st.success("✅ Não há clientes com pendência há 2 dias ou mais.")
         else:
-            # Monta tabela enxuta para o gestor
             colunas_pend = [
                 "NOME_CLIENTE_BASE",
                 "CPF_CLIENTE_BASE",
@@ -353,11 +319,11 @@ else:
             )
             st.caption(
                 "Clientes cuja **última ação é pendência** e que estão há "
-                "**2 dias ou mais** sem movimentação. Prioridade máxima de cobrança."
+                "**2 dias ou mais** sem movimentação. Prioridade de cobrança."
             )
 
 # ---------------------------------------------------------
-# 3) VENDAS INFORMADAS PARADAS (5+ DIAS SEM VIRAR VENDA GERADA)
+# 3) VENDAS INFORMADAS PARADAS (5+ DIAS)
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📝 Vendas informadas há mais de 5 dias (sem virar venda gerada)")
@@ -385,8 +351,6 @@ else:
                 "CPF_CLIENTE_BASE",
                 "EQUIPE",
                 "CORRETOR",
-                "CONSTRUTORA_BASE",
-                "EMPREENDIMENTO_BASE",
                 "DATA_ULTIMA_ACAO",
                 "DIAS_DESDE_INFO",
             ]
@@ -399,8 +363,6 @@ else:
                     "CPF_CLIENTE_BASE": "CPF",
                     "EQUIPE": "EQUIPE",
                     "CORRETOR": "CORRETOR",
-                    "CONSTRUTORA_BASE": "CONSTRUTORA",
-                    "EMPREENDIMENTO_BASE": "EMPREENDIMENTO",
                     "DATA_ULTIMA_ACAO": "DATA ÚLTIMA AÇÃO",
                     "DIAS_DESDE_INFO": "DIAS DESDE VENDA INFORMADA",
                 }
@@ -422,5 +384,5 @@ else:
             )
             st.caption(
                 "Vendas com **status final VENDA INFORMADA** há **5 dias ou mais**, "
-                "sem registro posterior de VENDA GERADA. Hora de cobrar a construtora/cliente."
+                "sem registro posterior de VENDA GERADA."
             )

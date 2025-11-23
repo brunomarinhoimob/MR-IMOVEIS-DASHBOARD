@@ -101,7 +101,7 @@ def format_currency(valor: float) -> str:
 # ---------------------------------------------------------
 # CARREGA A BASE DA PLANILHA (MESMA DO APP PRINCIPAL)
 # ---------------------------------------------------------
-df = carregar_dados_planilha()  :contentReference[oaicite:0]{index=0}
+df = carregar_dados_planilha()
 
 if df.empty:
     st.error("Não foi possível carregar os dados da planilha.")
@@ -560,4 +560,3 @@ else:
                         "Linha **Meta** mostra o ritmo necessário para atingir a meta "
                         "no fim do período."
                     )
-

@@ -134,16 +134,8 @@ else:
     data_min_mov = dias_validos.min().date()
     data_max_mov = dias_validos.max().date()
 
-if bases_validas.empty:
-    data_min_base = data_min_mov
-    data_max_base = data_max_mov
-else:
-    data_min_base = bases_validas.min().date()
-    data_max_base = bases_validas.max().date()
-
-
 # ---------------------------------------------------------
-# SIDEBAR – PERÍODOS (MOVIMENTAÇÃO E DATA BASE)
+# SIDEBAR – PERÍODO (APENAS DATA DE MOVIMENTAÇÃO)
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
@@ -165,39 +157,17 @@ else:
 if data_ini_mov > data_fim_mov:
     data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
 
-# Período por DATA_BASE (mês comercial)
-base_ini_default = max(data_min_base, (data_max_base - timedelta(days=30)))
-periodo_base = st.sidebar.date_input(
-    "Período (DATA BASE – mês comercial)",
-    value=(base_ini_default, data_max_base),
-    min_value=data_min_base,
-    max_value=data_max_base,
-)
-
-if isinstance(periodo_base, tuple):
-    base_ini, base_fim = periodo_base
-else:
-    base_ini, base_fim = periodo_base, periodo_base
-
-if base_ini > base_fim:
-    base_ini, base_fim = base_fim, base_ini
-
+# Filtro principal SOMENTE por DIA (sem DATA_BASE)
 mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
-mask_base_periodo = (df["DATA_BASE"].dt.date >= base_ini) & (
-    df["DATA_BASE"].dt.date <= base_fim
-)
-
-mask_periodo = mask_mov & mask_base_periodo
-df_periodo = df[mask_periodo].copy()
+df_periodo = df[mask_mov].copy()
 
 st.caption(
     f"Período (movimentação): **{data_ini_mov.strftime('%d/%m/%Y')}** até "
-    f"**{data_fim_mov.strftime('%d/%m/%Y')}** · "
-    f"DATA BASE de **{base_ini.strftime('%d/%m/%Y')}** até **{base_fim.strftime('%d/%m/%Y')}**."
+    f"**{data_fim_mov.strftime('%d/%m/%Y')}**."
 )
 
 if df_periodo.empty:
-    st.warning("Nenhum registro encontrado para a combinação de filtros selecionada.")
+    st.warning("Nenhum registro encontrado para o período selecionado.")
     st.stop()
 
 

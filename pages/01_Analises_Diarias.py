@@ -22,7 +22,7 @@ with col_titulo:
     st.title("📅 Análises Diárias – Gestão à Vista")
 with col_logo:
     try:
-        st.image(LOGO_PATH, use_container_width=True)
+        st.image(LOGO_PATH, use_column_width=True)
     except Exception:
         pass
 
@@ -37,19 +37,20 @@ GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
 # ---------------------------------------------------------
-# FUNÇÃO AUXILIAR PARA DATA
+# FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
 def limpar_para_data(serie):
     dt = pd.to_datetime(serie, dayfirst=True, errors="coerce")
     return dt.dt.date
 
-# ---------------------------------------------------------
-# CARREGAR DADOS  — SEM CACHE DO STREAMLIT
-# ---------------------------------------------------------
+
 def carregar_dados():
+    """
+    Carrega dados da planilha SEM cache do Streamlit.
+    """
     df = pd.read_csv(CSV_URL)
 
-    # Padroniza colunas
+    # Padroniza nomes de colunas
     df.columns = [c.strip().upper() for c in df.columns]
 
     # DATA / DIA
@@ -73,22 +74,28 @@ def carregar_dados():
         else:
             df[col] = "NÃO INFORMADO"
 
-    # SITUAÇÃO BASE (pode ser usado em outras páginas,
-    # mas AQUI vamos filtrar diretamente na coluna original)
+    # STATUS_BASE (para outras páginas; aqui vamos filtrar na coluna original)
     possiveis_cols_situacao = [
-        "SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS",
-        "SITUACAO", "SITUACAO ATUAL"
+        "SITUAÇÃO",
+        "SITUAÇÃO ATUAL",
+        "STATUS",
+        "SITUACAO",
+        "SITUACAO ATUAL",
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
     df["STATUS_BASE"] = ""
     if col_situacao:
-        status = df[col_situacao].fillna("").astype(str).str.upper()
-        df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
+        status = df[col_situacao].fillna("").astype(str).str.upper().str.strip()
+        df.loc[status == "EM ANÁLISE", "STATUS_BASE"] = "EM ANÁLISE"
+        df.loc[status == "REANÁLISE", "STATUS_BASE"] = "REANÁLISE"
 
     return df
 
+
+# ---------------------------------------------------------
+# CARREGA BASE
+# ---------------------------------------------------------
 df = carregar_dados()
 
 if df.empty:
@@ -118,37 +125,39 @@ lista_corretor = sorted(df["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
 # ---------------------------------------------------------
-# BASE DE ANÁLISES DO DIA  — APENAS ANÁLISE (SEM REANÁLISE)
+# BASE DE ANÁLISES DO DIA  — APENAS "EM ANÁLISE"
 # ---------------------------------------------------------
 st.caption(
     f"Dia selecionado: **{dia_escolhido.strftime('%d/%m/%Y')}** "
     "• Atualiza automaticamente a cada 1 minuto."
 )
 
-# 👉 Reencontrar a coluna de situação na base carregada
+# Descobre a coluna de situação original
 possiveis_cols_situacao = [
-    "SITUAÇÃO", "SITUAÇÃO ATUAL", "STATUS",
-    "SITUACAO", "SITUACAO ATUAL"
+    "SITUAÇÃO",
+    "SITUAÇÃO ATUAL",
+    "STATUS",
+    "SITUACAO",
+    "SITUACAO ATUAL",
 ]
 col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
 if col_situacao:
-    status = df[col_situacao].fillna("").astype(str).str.upper()
-    # Só queremos o que tem "ANÁLISE" mas NÃO tem "REANÁLISE"
-    mask_analise = status.str.contains("ANÁLISE") & ~status.str.contains("REANÁLISE")
-    df_analise_base = df[mask_analise].copy()
+    status = df[col_situacao].fillna("").astype(str).str.upper().str.strip()
+    # 🔥 FILTRO DEFINITIVO:
+    # Só entra se for EXATAMENTE "EM ANÁLISE"
+    df_analise_base = df[status == "EM ANÁLISE"].copy()
 else:
-    # fallback: se por algum motivo não achar coluna, usa STATUS_BASE EM ANÁLISE
-    df_analise_base = df[df["STATUS_BASE"] == "EM ANÁLISE"].copy()
+    df_analise_base = pd.DataFrame()
 
 if df_analise_base.empty:
-    st.info("Não há análises (sem reanálise) registradas na base.")
+    st.info("Não há lançamentos com situação exatamente 'EM ANÁLISE'.")
     st.stop()
 
-# Só o dia escolhido
+# Apenas o dia escolhido
 df_dia = df_analise_base[df_analise_base["DIA"] == dia_escolhido]
 
-# Filtros
+# Filtros adicionais
 if equipe_sel != "Todas":
     df_dia = df_dia[df_dia["EQUIPE"] == equipe_sel]
 
@@ -159,7 +168,7 @@ qtde_total_dia = len(df_dia)
 
 if qtde_total_dia == 0:
     st.warning(
-        f"Nenhuma ANÁLISE (sem REANÁLISE) no dia "
+        f"Nenhuma ANÁLISE (situação = 'EM ANÁLISE') no dia "
         f"{dia_escolhido.strftime('%d/%m/%Y')} com esses filtros."
     )
     st.stop()
@@ -174,7 +183,7 @@ with c2:
     st.markdown(
         f"### Hoje já foram registradas **{qtde_total_dia} análises** "
         f"no dia **{dia_escolhido.strftime('%d/%m/%Y')}**, "
-        "desconsiderando REANÁLISE."
+        "considerando apenas situação **EM ANÁLISE** (sem REANÁLISE)."
     )
 
 st.markdown("---")
@@ -192,7 +201,9 @@ with col_eq:
         .reset_index(name="ANÁLISES")
         .sort_values("ANÁLISES", ascending=False)
     )
-    total_row = pd.DataFrame({"EQUIPE": ["TOTAL IMOBILIÁRIA"], "ANÁLISES": [qtde_total_dia]})
+    total_row = pd.DataFrame(
+        {"EQUIPE": ["TOTAL IMOBILIÁRIA"], "ANÁLISES": [qtde_total_dia]}
+    )
     tabela_equipe = pd.concat([analises_equipe, total_row], ignore_index=True)
     st.dataframe(tabela_equipe, use_container_width=True, hide_index=True)
 
@@ -212,8 +223,8 @@ with col_corr:
 st.markdown(
     "<hr style='border-color:#1f2937'>"
     "<p style='text-align:center; color:#6b7280;'>"
-    "Painel de Análises Diárias — conta apenas ANÁLISE (sem REANÁLISE). "
-    "Atualiza a cada 60 segundos."
+    "Painel de Análises Diárias — conta apenas lançamentos com situação "
+    "EXATAMENTE 'EM ANÁLISE'. Atualiza a cada 60 segundos."
     "</p>",
     unsafe_allow_html=True,
 )

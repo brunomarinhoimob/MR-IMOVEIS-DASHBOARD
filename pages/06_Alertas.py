@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import timedelta, date
+from datetime import timedelta
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -19,15 +19,15 @@ with col_logo:
     try:
         st.image("logo_mr.png", use_column_width=True)
     except Exception:
-        pass  # se não achar a logo, só ignora
+        pass  # se não achar a logo, apenas ignora
 
 st.markdown(
-    "Monitoramento de **corretores**, **clientes em pendência** e "
-    "**vendas informadas paradas**, para o gestor cobrar e destravar o funil."
+    "Monitoramento de **corretores**, **clientes em pendência** "
+    "e **vendas informadas paradas**, para o gestor cobrar e destravar o funil."
 )
 
 # ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA
+# CONFIG: LINK DA PLANILHA (MESMO DO DASHBOARD PRINCIPAL)
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
@@ -59,6 +59,9 @@ def carregar_dados():
         df["DIA"] = limpar_para_data(df["DIA"])
     else:
         df["DIA"] = pd.NaT
+
+    # Converte DIA para datetime para facilitar cálculos depois
+    df["DT_BASE"] = pd.to_datetime(df["DIA"], errors="coerce")
 
     # EQUIPE / CORRETOR
     for col in ["EQUIPE", "CORRETOR"]:
@@ -152,12 +155,11 @@ if df.empty:
     st.stop()
 
 # Data de referência geral (última data na base filtrada)
-dt_geral = pd.to_datetime(df["DIA"], errors="coerce")
-data_ref_geral_ts = dt_geral.max()
+data_ref_geral_ts = df["DT_BASE"].max()
 if pd.isna(data_ref_geral_ts):
     st.info("Não foi possível identificar a data de referência na base.")
     st.stop()
-data_ref_geral = data_ref_geral_ts.date()
+data_ref_geral_date = data_ref_geral_ts.date()
 
 # ---------------------------------------------------------
 # 1) CORRETORES SEM ANÁLISE HÁ 3+ DIAS (JANELA 30 DIAS)
@@ -166,30 +168,32 @@ st.markdown("## 🧑‍💻 Corretores sem análises nos últimos 3 dias (janela
 
 df_analise_base = df[df["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])].copy()
 
-if df_analise_base.empty or df_analise_base["DIA"].isna().all():
+if df_analise_base.empty or df_analise_base["DT_BASE"].isna().all():
     if equipe_sel == "Todas":
         st.info("Ainda não há análises registradas para calcular alertas.")
     else:
         st.info(f"A equipe **{equipe_sel}** não possui análises registradas.")
 else:
-    df_analise_base["DT_ANALISE"] = pd.to_datetime(df_analise_base["DIA"], errors="coerce")
-    data_ref_ts = df_analise_base["DT_ANALISE"].max()
-    data_ref = data_ref_ts.date() if not pd.isna(data_ref_ts) else data_ref_geral
+    # Data de referência (última análise)
+    data_ref_ts = df_analise_base["DT_BASE"].max()
+    data_ref = data_ref_ts if not pd.isna(data_ref_ts) else data_ref_geral_ts
 
     data_inicio_janela = data_ref - timedelta(days=30)
 
+    # Mantém análises dentro dos últimos 30 dias
     df_analise_30 = df_analise_base[
-        df_analise_base["DT_ANALISE"].dt.date >= data_inicio_janela
+        (df_analise_base["DT_BASE"] >= data_inicio_janela)
+        & (df_analise_base["DT_BASE"] <= data_ref)
     ].copy()
 
     if df_analise_30.empty:
         st.info(
-            f"Não há análises nos últimos 30 dias (data de referência: {data_ref.strftime('%d/%m/%Y')})."
+            f"Não há análises nos últimos 30 dias (data de referência: {data_ref.date().strftime('%d/%m/%Y')})."
         )
     else:
         ultima_analise_corretor = (
-            df_analise_30.dropna(subset=["DT_ANALISE"])
-            .groupby("CORRETOR", as_index=False)["DT_ANALISE"]
+            df_analise_30.dropna(subset=["DT_BASE"])
+            .groupby("CORRETOR", as_index=False)["DT_BASE"]
             .max()
         )
 
@@ -199,26 +203,26 @@ else:
         for corr in corretores_todos:
             linha = ultima_analise_corretor[ultima_analise_corretor["CORRETOR"] == corr]
             if linha.empty:
-                # sem análise na janela de 30 dias => não alertar
+                # sem análise na janela de 30 dias => não entra no alerta
                 continue
 
-            ultima_dt = linha["DT_ANALISE"].iloc[0].date()
-            dias_sem = (data_ref - ultima_dt).days
+            ultima_dt_ts = linha["DT_BASE"].iloc[0]
+            dias_sem = (data_ref - ultima_dt_ts).days
 
             if dias_sem >= 3:
                 registros_alerta.append(
                     {
                         "CORRETOR": corr,
-                        "ÚLTIMA ANÁLISE": ultima_dt.strftime("%d/%m/%Y"),
+                        "ÚLTIMA ANÁLISE": ultima_dt_ts.date().strftime("%d/%m/%Y"),
                         "DIAS SEM ANÁLISE (janela 30d)": dias_sem,
                     }
                 )
 
         st.caption(
-            f"Data de referência considerada: **{data_ref.strftime('%d/%m/%Y')}**. "
-            "A janela de análise é sempre os **últimos 30 dias**. "
-            "Entram aqui somente corretores que estão há **3 dias ou mais** sem subir análises, "
-            "mas que ainda tiveram alguma análise dentro desses 30 dias."
+            f"Data de referência considerada: **{data_ref.date().strftime('%d/%m/%Y')}**. "
+            "Janela de **30 dias** para trás. Entram aqui somente corretores que "
+            "estão há **3 dias ou mais** sem subir análises, mas que tiveram pelo menos "
+            "1 análise dentro dessa janela."
         )
 
         if not registros_alerta:
@@ -248,14 +252,15 @@ st.markdown("---")
 st.markdown("## ⏳ Clientes em pendência há mais de 2 dias (última ação pendência)")
 
 df_pend_base = df.copy()
-df_pend_base["DT_BASE"] = pd.to_datetime(df_pend_base["DIA"], errors="coerce")
 
+# Chave de cliente
 df_pend_base["CHAVE_CLIENTE"] = (
     df_pend_base["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
     + " | "
     + df_pend_base["CPF_CLIENTE_BASE"].fillna("")
 )
 
+# Última ação por cliente
 df_last_acao = (
     df_pend_base.dropna(subset=["DT_BASE"])
     .sort_values("DT_BASE")
@@ -271,9 +276,9 @@ else:
     if df_pendentes.empty:
         st.success("✅ Não há clientes com pendência como última ação.")
     else:
-        df_pendentes["DATA_ULTIMA_ACAO"] = df_pendentes["DT_BASE"].dt.date
+        # diferença de dias usando Timestamp
         df_pendentes["DIAS_DESDE_PENDENCIA"] = (
-            data_ref_geral - df_pendentes["DATA_ULTIMA_ACAO"]
+            data_ref_geral_ts - df_pendentes["DT_BASE"]
         ).dt.days
 
         df_pendentes = df_pendentes[df_pendentes["DIAS_DESDE_PENDENCIA"] >= 2]
@@ -281,16 +286,16 @@ else:
         if df_pendentes.empty:
             st.success("✅ Não há clientes com pendência há 2 dias ou mais.")
         else:
-            colunas_pend = [
-                "NOME_CLIENTE_BASE",
-                "CPF_CLIENTE_BASE",
-                "EQUIPE",
-                "CORRETOR",
-                "DATA_ULTIMA_ACAO",
-                "DIAS_DESDE_PENDENCIA",
-            ]
-            colunas_existentes = [c for c in colunas_pend if c in df_pendentes.columns]
-            df_pend_view = df_pendentes[colunas_existentes].copy()
+            df_pend_view = df_pendentes[
+                [
+                    "NOME_CLIENTE_BASE",
+                    "CPF_CLIENTE_BASE",
+                    "EQUIPE",
+                    "CORRETOR",
+                    "DT_BASE",
+                    "DIAS_DESDE_PENDENCIA",
+                ]
+            ].copy()
 
             df_pend_view = df_pend_view.rename(
                 columns={
@@ -298,10 +303,14 @@ else:
                     "CPF_CLIENTE_BASE": "CPF",
                     "EQUIPE": "EQUIPE",
                     "CORRETOR": "CORRETOR",
-                    "DATA_ULTIMA_ACAO": "DATA ÚLTIMA AÇÃO",
+                    "DT_BASE": "DATA ÚLTIMA AÇÃO",
                     "DIAS_DESDE_PENDENCIA": "DIAS DESDE PENDÊNCIA",
                 }
             )
+
+            df_pend_view["DATA ÚLTIMA AÇÃO"] = pd.to_datetime(
+                df_pend_view["DATA ÚLTIMA AÇÃO"], errors="coerce"
+            ).dt.strftime("%d/%m/%Y")
 
             df_pend_view = df_pend_view.sort_values(
                 "DIAS DESDE PENDÊNCIA", ascending=False
@@ -317,13 +326,14 @@ else:
                 use_container_width=True,
                 hide_index=True,
             )
+
             st.caption(
                 "Clientes cuja **última ação é pendência** e que estão há "
-                "**2 dias ou mais** sem movimentação. Prioridade de cobrança."
+                "**2 dias ou mais** sem movimentação. Priorizem a cobrança nesses casos."
             )
 
 # ---------------------------------------------------------
-# 3) VENDAS INFORMADAS PARADAS (5+ DIAS)
+# 3) VENDAS INFORMADAS PARADAS (5+ DIAS SEM VIRAR VENDA GERADA)
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📝 Vendas informadas há mais de 5 dias (sem virar venda gerada)")
@@ -336,9 +346,8 @@ else:
     if df_venda_info.empty:
         st.success("✅ Não há vendas informadas pendentes de confirmação.")
     else:
-        df_venda_info["DATA_ULTIMA_ACAO"] = df_venda_info["DT_BASE"].dt.date
         df_venda_info["DIAS_DESDE_INFO"] = (
-            data_ref_geral - df_venda_info["DATA_ULTIMA_ACAO"]
+            data_ref_geral_ts - df_venda_info["DT_BASE"]
         ).dt.days
 
         df_venda_info = df_venda_info[df_venda_info["DIAS_DESDE_INFO"] >= 5]
@@ -346,16 +355,16 @@ else:
         if df_venda_info.empty:
             st.success("✅ Não há vendas informadas há 5 dias ou mais sem evolução.")
         else:
-            colunas_info = [
-                "NOME_CLIENTE_BASE",
-                "CPF_CLIENTE_BASE",
-                "EQUIPE",
-                "CORRETOR",
-                "DATA_ULTIMA_ACAO",
-                "DIAS_DESDE_INFO",
-            ]
-            colunas_existentes = [c for c in colunas_info if c in df_venda_info.columns]
-            df_info_view = df_venda_info[colunas_existentes].copy()
+            df_info_view = df_venda_info[
+                [
+                    "NOME_CLIENTE_BASE",
+                    "CPF_CLIENTE_BASE",
+                    "EQUIPE",
+                    "CORRETOR",
+                    "DT_BASE",
+                    "DIAS_DESDE_INFO",
+                ]
+            ].copy()
 
             df_info_view = df_info_view.rename(
                 columns={
@@ -363,10 +372,14 @@ else:
                     "CPF_CLIENTE_BASE": "CPF",
                     "EQUIPE": "EQUIPE",
                     "CORRETOR": "CORRETOR",
-                    "DATA_ULTIMA_ACAO": "DATA ÚLTIMA AÇÃO",
+                    "DT_BASE": "DATA ÚLTIMA AÇÃO",
                     "DIAS_DESDE_INFO": "DIAS DESDE VENDA INFORMADA",
                 }
             )
+
+            df_info_view["DATA ÚLTIMA AÇÃO"] = pd.to_datetime(
+                df_info_view["DATA ÚLTIMA AÇÃO"], errors="coerce"
+            ).dt.strftime("%d/%m/%Y")
 
             df_info_view = df_info_view.sort_values(
                 "DIAS DESDE VENDA INFORMADA", ascending=False
@@ -382,7 +395,9 @@ else:
                 use_container_width=True,
                 hide_index=True,
             )
+
             st.caption(
                 "Vendas com **status final VENDA INFORMADA** há **5 dias ou mais**, "
-                "sem registro posterior de VENDA GERADA."
+                "sem registro posterior de VENDA GERADA. Cobrar construtora/cliente "
+                "para confirmar ou atualizar o status."
             )

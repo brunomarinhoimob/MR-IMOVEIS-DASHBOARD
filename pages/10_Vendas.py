@@ -136,6 +136,43 @@ def carregar_dados():
     else:
         df["VGV"] = 0.0
 
+    # NOME / CPF BASE PARA CHAVE DO CLIENTE (UNIFICAR VENDAS)
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
+
+    col_nome = None
+    for c in possiveis_nome:
+        if c in df.columns:
+            col_nome = c
+            break
+
+    col_cpf = None
+    for c in possiveis_cpf:
+        if c in df.columns:
+            col_cpf = c
+            break
+
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+
     return df
 
 
@@ -160,6 +197,28 @@ def conta_vendas(s):
 
 def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
+
+
+def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
+    """
+    Retorna apenas UMA venda por cliente (nome + CPF), usando o último status.
+    Se existir VENDA INFORMADA e depois VENDA GERADA, fica só a VENDA GERADA.
+    """
+    df_v = df_scope[df_scope["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    if df_v.empty:
+        return df_v
+
+    df_v["CHAVE_CLIENTE"] = (
+        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df_v["CPF_CLIENTE_BASE"].fillna("")
+    )
+
+    # Ordena cronologicamente e pega SEMPRE a última linha de cada cliente
+    df_v = df_v.sort_values("DIA")
+    df_v_ult = df_v.groupby("CHAVE_CLIENTE").tail(1)
+
+    return df_v_ult
 
 
 # ---------------------------------------------------------
@@ -246,9 +305,9 @@ if df_periodo.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# FILTRA SÓ VENDAS PARA OS KPIs
+# FILTRA SÓ VENDAS PARA OS KPIs (VENDAS ÚNICAS POR CLIENTE)
 # ---------------------------------------------------------
-df_vendas = df_periodo[df_periodo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+df_vendas = obter_vendas_unicas(df_periodo)
 
 qtd_vendas = len(df_vendas)
 vgv_total = df_vendas["VGV"].sum()
@@ -270,8 +329,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
         & (df_leads_use["data_captura_date"] <= data_fim)
     )
 
-    # Se estiver filtrando por equipe/corretor, não tem como casar 100% sem nome do corretor,
-    # então aqui é leads gerais da imobiliária dentro do período.
+    # Leads gerais da imobiliária dentro do período
     df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
     total_leads_periodo = len(df_leads_periodo)
 
@@ -539,13 +597,20 @@ else:
     with c_mix1:
         st.markdown("### Por Construtora")
         mix_const = (
-            df_vendas.groupby("CONSTRUTORA_BASE")["VGV"]
-            .sum()
+            df_vendas.groupby("CONSTRUTORA_BASE")
+            .agg(
+                QTDE_VENDAS=("VGV", "size"),
+                VGV=("VGV", "sum"),
+            )
             .reset_index()
             .sort_values("VGV", ascending=False)
         )
         st.dataframe(
-            mix_const.style.format({"VGV": "R$ {:,.2f}".format}),
+            mix_const.style.format(
+                {
+                    "VGV": "R$ {:,.2f}".format,
+                }
+            ),
             use_container_width=True,
             hide_index=True,
         )
@@ -567,7 +632,7 @@ else:
 
 
 # ---------------------------------------------------------
-# TABELA DETALHADA DE VENDAS
+# TABELA DETALHADA DE VENDAS (UMA LINHA POR CLIENTE)
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📋 Detalhamento de Vendas (linha a linha)")

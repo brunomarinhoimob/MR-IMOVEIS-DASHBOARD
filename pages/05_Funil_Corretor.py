@@ -2,10 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
-import requests
 from datetime import date, timedelta
-
-from utils.supremo_config import TOKEN_SUPREMO
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -30,11 +27,6 @@ SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
 CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID_ANALISES}"
 
-# ---------------------------------------------------------
-# CONFIG: API LEADS SUPREMO
-# ---------------------------------------------------------
-BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
-
 
 # ---------------------------------------------------------
 # FUNÇÃO AUXILIAR PARA LIMPAR DATA
@@ -45,7 +37,7 @@ def limpar_para_data(serie):
 
 
 # ---------------------------------------------------------
-# CARREGAR E PREPARAR DADOS
+# CARREGAR E PREPARAR DADOS (PLANILHA)
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
 def carregar_dados():
@@ -117,84 +109,13 @@ if df.empty:
 
 
 # ---------------------------------------------------------
-# CARREGAR LEADS DO SUPREMO (ATÉ ~1000 LEADS)
+# LEADS DO SUPREMO
+# Mesma lógica do Funil Imobiliária:
+# - O app principal (ou outra página) já chamou a API
+#   e salvou o resultado em st.session_state["df_leads"].
+# - Aqui a gente só reutiliza esse dataframe.
 # ---------------------------------------------------------
-def get_leads_page(pagina: int = 1) -> pd.DataFrame:
-    """
-    Busca uma página de leads na API do Supremo.
-    """
-    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
-    params = {"pagina": pagina}
-
-    try:
-        resp = requests.get(BASE_URL_LEADS, headers=headers, params=params, timeout=30)
-    except Exception as e:
-        st.error(f"Erro de conexão com a API de leads: {e}")
-        return pd.DataFrame()
-
-    if resp.status_code != 200:
-        st.error(f"Erro ao buscar leads (HTTP {resp.status_code}): {resp.text}")
-        return pd.DataFrame()
-
-    try:
-        data = resp.json()
-    except Exception as e:
-        st.error(f"Erro ao interpretar JSON de leads: {e}")
-        return pd.DataFrame()
-
-    if isinstance(data, dict) and "data" in data and isinstance(data["data"], list):
-        return pd.DataFrame(data["data"])
-    if isinstance(data, list):
-        return pd.DataFrame(data)
-
-    st.error("Formato inesperado do retorno da API de leads.")
-    st.write(data)
-    return pd.DataFrame()
-
-
-@st.cache_data(ttl=60)
-def carregar_leads(limit: int = 1000, max_pages: int = 20) -> pd.DataFrame:
-    """
-    Busca até 'limit' leads no Supremo, varrendo páginas sequencialmente.
-    """
-    dfs = []
-    total = 0
-    pagina = 1
-
-    while total < limit and pagina <= max_pages:
-        df_page = get_leads_page(pagina=pagina)
-        if df_page.empty:
-            break
-
-        dfs.append(df_page)
-        total += len(df_page)
-        pagina += 1
-
-    if not dfs:
-        return pd.DataFrame()
-
-    df_all = pd.concat(dfs, ignore_index=True)
-
-    # Remove duplicados por id, se existir
-    if "id" in df_all.columns:
-        df_all = df_all.drop_duplicates(subset="id", keep="first")
-
-    # Garante no máximo "limit" registros
-    if len(df_all) > limit:
-        df_all = df_all.head(limit)
-
-    # Trata data de captura
-    if "data_captura" in df_all.columns:
-        df_all["data_captura"] = pd.to_datetime(df_all["data_captura"], errors="coerce")
-
-    return df_all
-
-
-df_leads = carregar_leads()
-
-# Guarda também no session_state para reutilizar em outras páginas
-if "df_leads" not in st.session_state:
-    st.session_state["df_leads"] = df_leads
+df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 
 # ---------------------------------------------------------
@@ -288,7 +209,7 @@ st.markdown(f"## 🧑‍💼 Funil do Corretor: **{corretor_sel}**")
 df_cor_periodo = df_periodo[df_periodo["CORRETOR"] == corretor_sel].copy()
 
 # ---------------------------------------------------------
-# LEADS DO CORRETOR NO PERÍODO (API SUPREMO)
+# LEADS DO CORRETOR NO PERÍODO (USANDO df_leads DO SESSION_STATE)
 # ---------------------------------------------------------
 total_leads_corretor_periodo = None
 if not df_leads.empty and "data_captura" in df_leads.columns:

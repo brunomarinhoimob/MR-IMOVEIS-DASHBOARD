@@ -202,7 +202,6 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
 
             df_page = pd.DataFrame(registros)
 
-            # Tenta descobrir total de páginas
             total_paginas = (
                 data.get("last_page")
                 or data.get("totalPaginas")
@@ -233,7 +232,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
 
     df_all = pd.concat(dfs, ignore_index=True)
 
-    # Normalizações
+    # ---- Nome normalizado ----
     if "nome" in df_all.columns:
         df_all["NOME_CRM"] = (
             df_all["nome"]
@@ -245,7 +244,8 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     else:
         df_all["NOME_CRM"] = "NÃO INFORMADO"
 
-    # 👇 AJUSTE IMPORTANTE: status ATIVO
+    # ---- Status normalizado ----
+    # Se existir coluna "status", mapeia; se não existir, considera todo mundo ATIVO.
     if "status" in df_all.columns:
         def map_status(x):
             s = str(x).strip().upper()
@@ -255,8 +255,9 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
 
         df_all["STATUS_CRM"] = df_all["status"].apply(map_status)
     else:
-        df_all["STATUS_CRM"] = "DESCONHECIDO"
+        df_all["STATUS_CRM"] = "ATIVO"   # 👈 sem campo na API = trata como ativo
 
+    # ---- Telefone ----
     if "ddd" in df_all.columns and "telefone" in df_all.columns:
         df_all["TELEFONE_CRM"] = (
             df_all["ddd"].fillna("").astype(str).str.strip()

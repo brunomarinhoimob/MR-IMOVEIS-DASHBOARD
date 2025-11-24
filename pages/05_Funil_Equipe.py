@@ -119,7 +119,11 @@ def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
         df_v["CPF_CLIENTE_BASE"] = ""
 
     df_v["CHAVE_CLIENTE"] = (
-        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        df_v["NOME_CLIENTE_BASE"]
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
         + " | "
         + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
@@ -157,13 +161,17 @@ else:
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
 
+# limites de data para a equipe
+hoje = date.today()
 if dias_validos.empty:
-    hoje = date.today()
     data_min_mov = hoje - timedelta(days=30)
     data_max_mov = hoje
 else:
     data_min_mov = dias_validos.min().date()
     data_max_mov = dias_validos.max().date()
+
+# permitir datas futuras (até 1 ano)
+max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
 
 # ---------------------------------------------------------
@@ -174,7 +182,7 @@ periodo_mov = st.sidebar.date_input(
     "Período (data de movimentação)",
     value=(data_ini_default_mov, data_max_mov),
     min_value=data_min_mov,
-    max_value=data_max_mov,
+    max_value=max_futuro,
 )
 
 if isinstance(periodo_mov, tuple):
@@ -422,12 +430,10 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            dias_periodo = (
-                df_periodo["DIA"]
-                .dt.date.dropna()
-                .sort_values()
-                .unique()
-            )
+            # eixo de dias: de data_ini_mov até data_fim_mov (inclui datas futuras)
+            dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
+            dias_periodo = [d.date() for d in dr]
+
             if len(dias_periodo) == 0:
                 st.info("Não há datas válidas no período para montar o gráfico.")
             else:
@@ -469,8 +475,17 @@ else:
                         .reindex(dias_periodo, fill_value=0)
                     )
 
+                    # linha Real acumulada
                     df_line["Real"] = cont_por_dia.values
                     df_line["Real"] = df_line["Real"].cumsum()
+
+                    # corta a linha Real depois do dia de hoje
+                    hoje_date = hoje
+                    limite_real = min(hoje_date, data_fim_mov)
+                    mask_future = df_line.index.date > limite_real
+                    df_line.loc[mask_future, "Real"] = np.nan
+
+                    # linha Meta até o fim do período
                     df_line["Meta"] = np.linspace(
                         0, total_meta, num=len(df_line), endpoint=True
                     )
@@ -496,8 +511,24 @@ else:
                         .properties(height=320)
                     )
 
+                    # ponto marcando o dia de hoje (se estiver no período)
+                    hoje_dentro = (hoje_date >= data_ini_mov) and (hoje_date <= data_fim_mov)
+                    if hoje_dentro:
+                        df_real_reset = df_line.reset_index()
+                        df_real_hoje = df_real_reset[
+                            df_real_reset["DIA"].dt.date == limite_real
+                        ]
+                        if not df_real_hoje.empty:
+                            ponto_hoje = (
+                                alt.Chart(df_real_hoje)
+                                .mark_point(size=80)
+                                .encode(x="DIA:T", y="Real:Q")
+                            )
+                            chart = chart + ponto_hoje
+
                     st.altair_chart(chart, use_container_width=True)
                     st.caption(
-                        "Linha **Real** = indicador acumulado da equipe no período. "
-                        "Linha **Meta** = ritmo necessário para bater a meta."
+                        "Linha **Real** = indicador acumulado da equipe, parando no **dia de hoje**. "
+                        "Linha **Meta** = ritmo necessário até a **data final escolhida** "
+                        "para bater a meta da equipe."
                     )

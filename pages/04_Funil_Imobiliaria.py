@@ -428,7 +428,7 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # Eixo de dias: intervalo completo de data_ini_mov até data_fim_mov
+            # eixo de dias = todo intervalo do filtro
             dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
             dias_periodo = [d.date() for d in dr]
 
@@ -473,9 +473,17 @@ else:
                         .reindex(dias_periodo, fill_value=0)
                     )
 
+                    # linha Real acumulada
                     df_line["Real"] = cont_por_dia.values
                     df_line["Real"] = df_line["Real"].cumsum()
 
+                    # corta a linha Real depois do dia de hoje
+                    hoje_date = date.today()
+                    limite_real = min(hoje_date, data_fim_mov)
+                    mask_future = df_line.index.date > limite_real
+                    df_line.loc[mask_future, "Real"] = np.nan
+
+                    # meta distribuída até o fim do período
                     df_line["Meta"] = np.linspace(
                         0, total_meta, num=len(df_line), endpoint=True
                     )
@@ -501,9 +509,26 @@ else:
                         .properties(height=320)
                     )
 
+                    # ponto destacando o dia de hoje (se estiver dentro do período)
+                    hoje_dentro = (hoje_date >= data_ini_mov) and (
+                        hoje_date <= data_fim_mov
+                    )
+                    if hoje_dentro:
+                        df_real_reset = df_line.reset_index()
+                        df_real_hoje = df_real_reset[
+                            df_real_reset["DIA"].dt.date == limite_real
+                        ]
+                        if not df_real_hoje.empty:
+                            ponto_hoje = (
+                                alt.Chart(df_real_hoje)
+                                .mark_point(size=80)
+                                .encode(x="DIA:T", y="Real:Q")
+                            )
+                            chart = chart + ponto_hoje
+
                     st.altair_chart(chart, use_container_width=True)
                     st.caption(
-                        "Linha **Real** mostra o acumulado diário do indicador escolhido. "
-                        "Linha **Meta** vai até a **data final escolhida** e mostra o ritmo "
-                        "necessário para atingir a meta no fim do período."
+                        "Linha **Real** mostra o acumulado diário do indicador escolhido e "
+                        "para no **dia de hoje**. Linha **Meta** vai até a data final escolhida "
+                        "e mostra o ritmo necessário para atingir a meta no fim do período."
                     )

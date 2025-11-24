@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from app_dashboard import carregar_dados_planilha, carregar_leads_direto
 from utils.supremo_config import TOKEN_SUPREMO
@@ -15,6 +15,8 @@ st.set_page_config(
     page_icon="🧑‍💼",
     layout="wide",
 )
+
+HOJE = date.today()
 
 # ---------------------------------------------------------
 # ESTILO (CSS)
@@ -80,14 +82,6 @@ st.markdown(
         color: #9ca3af;
         margin-bottom: 0.5rem;
     }
-    .kanban-column {
-        background: #0b1120;
-        border-radius: 16px;
-        padding: 10px 10px 14px 10px;
-        border: 1px solid #1f2937;
-        box-shadow: 0 12px 28px rgba(0,0,0,0.55);
-        min-height: 120px;
-    }
     .small-pill {
         display: inline-block;
         font-size: 0.65rem;
@@ -112,40 +106,6 @@ st.markdown(
         border-color: #2563eb;
         color: #bfdbfe;
     }
-    .tag-aniversario {
-        background: linear-gradient(90deg, #f97316, #fb7185);
-        color: white;
-        padding: 1px 8px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        margin-left: 4px;
-    }
-    .corretor-card {
-        background: #020617;
-        border-radius: 16px;
-        padding: 10px 14px;
-        margin-bottom: 10px;
-        border: 1px solid #1f2937;
-        box-shadow: 0 12px 26px rgba(0,0,0,0.7);
-        font-size: 0.8rem;
-    }
-    .corretor-nome {
-        font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 2px;
-    }
-    .corretor-meta {
-        font-size: 0.7rem;
-        color: #9ca3af;
-    }
-    .corretor-kpis {
-        margin-top: 6px;
-        font-size: 0.72rem;
-    }
-    .corretor-kpis span {
-        display: inline-block;
-        margin-right: 10px;
-    }
     .tabela-wrapper {
         border-radius: 16px;
         border: 1px solid #1f2937;
@@ -159,27 +119,27 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# TOPO DA PÁGINA
+# TOPO DA PÁGINA (LOGO + TÍTULO)
 # ---------------------------------------------------------
 with st.container():
-    st.markdown(
-        """
-        <div class="top-banner">
-            <div class="top-banner-title">Corretores – Visão Geral</div>
-            <p class="top-banner-subtitle">
-                Integração <b>Supremo CRM + planilha de produção</b> para mostrar um
-                panorama completo de corretores, equipes, leads, análises, aprovações
-                e vendas.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ---------------------------------------------------------
-# PARÂMETROS GERAIS
-# ---------------------------------------------------------
-HOJE = date.today()
+    col_logo, col_text = st.columns([1, 4])
+    with col_logo:
+        # logo_mr.png deve estar na raiz do projeto ou em caminho acessível
+        st.image("logo_mr.png", use_column_width=True)
+    with col_text:
+        st.markdown(
+            """
+            <div class="top-banner">
+                <div class="top-banner-title">Corretores – Visão Geral</div>
+                <p class="top-banner-subtitle">
+                    Integração <b>Supremo CRM + planilha de produção</b> para mostrar um
+                    panorama completo de corretores, equipes, leads, análises, aprovações
+                    e vendas.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
@@ -206,11 +166,6 @@ def safe_div(num, den):
 # ---------------------------------------------------------
 @st.cache_data(ttl=3600)
 def carregar_df_planilha():
-    """
-    Carrega os dados da planilha única via função do app principal.
-    Essa função já retorna a base consolidada com as colunas padronizadas usadas
-    nas outras páginas (ANALISE, STATUS_BASE, etc).
-    """
     df = carregar_dados_planilha()
     if df is None or df.empty:
         return pd.DataFrame()
@@ -222,11 +177,6 @@ BASE_URL_CORRETORES = "https://api.supremocrm.com.br/v1/corretores"
 
 @st.cache_data(ttl=3600)
 def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
-    """
-    Carrega corretores da API do Supremo.
-    Cache de 1h para não pesar a operação.
-    Aceita respostas com chaves 'data' ou 'dados'.
-    """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
     dfs = []
     pagina = 1
@@ -246,10 +196,11 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
             return pd.DataFrame()
 
         if resp.status_code != 200:
+            corpo = ""
             try:
                 corpo = resp.text
             except Exception:
-                corpo = ""
+                pass
             st.error(
                 f"Erro ao chamar API de corretores. "
                 f"Status: {resp.status_code}. Corpo: {corpo[:500]}"
@@ -262,10 +213,6 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
             st.error(f"Erro ao decodificar JSON da API de corretores: {e}")
             return pd.DataFrame()
 
-        # Estruturas possíveis:
-        # { "data": [...], "current_page": 1, "last_page": X, ... }
-        # { "dados": [...], "paginaAtual": 1, "totalPaginas": X, ... }
-        # [ {...}, {...} ]
         if isinstance(data, dict):
             if "data" in data:
                 registros = data.get("data", [])
@@ -306,7 +253,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
 
     df_all = pd.concat(dfs, ignore_index=True)
 
-    # ---- Nome normalizado ----
+    # Nome normalizado
     if "nome" in df_all.columns:
         df_all["NOME_CRM"] = (
             df_all["nome"]
@@ -318,8 +265,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     else:
         df_all["NOME_CRM"] = "NÃO INFORMADO"
 
-    # ---- Status normalizado ----
-    # Se existir coluna "status", mapeia; se não existir, considera todo mundo ATIVO.
+    # Status normalizado (e depois filtra só ATIVO)
     if "status" in df_all.columns:
         def map_status(x):
             s = str(x).strip().upper()
@@ -334,7 +280,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     # Mantém apenas corretores ATIVOS
     df_all = df_all[df_all["STATUS_CRM"] == "ATIVO"].copy()
 
-    # ---- Telefone ----
+    # Telefone
     if "ddd" in df_all.columns and "telefone" in df_all.columns:
         df_all["TELEFONE_CRM"] = (
             df_all["ddd"].fillna("").astype(str).str.strip()
@@ -344,7 +290,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     else:
         df_all["TELEFONE_CRM"] = ""
 
-    # ---- Aniversário ----
+    # Aniversário
     if "aniversario" in df_all.columns:
         def parse_aniv(x):
             try:
@@ -364,28 +310,68 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
         df_all["ANIVERSARIO_DIA"] = np.nan
         df_all["ANIVERSARIO_MES"] = np.nan
 
-    # ---- ID ----
-    if "id" in df_all.columns:
-        df_all["ID_CRM"] = df_all["id"]
-    else:
-        df_all["ID_CRM"] = np.nan
+    # ID e login
+    df_all["ID_CRM"] = df_all.get("id", np.nan)
+    df_all["LOGIN_CRM"] = (
+        df_all.get("login", "")
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
-    # ---- Login ----
-    if "login" in df_all.columns:
-        df_all["LOGIN_CRM"] = (
-            df_all["login"].fillna("").astype(str).str.strip()
-        )
-    else:
-        df_all["LOGIN_CRM"] = ""
+    # Nome base para cruzar com planilha
+    df_all["NOME_CRM_BASE"] = (
+        df_all["NOME_CRM"]
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
     return df_all
 
 
+@st.cache_data(ttl=3600)
+def carregar_leads():
+    df_leads = carregar_leads_direto(limit=2000, max_pages=50)
+    if df_leads is None or df_leads.empty:
+        return pd.DataFrame()
+
+    possiveis_cols_corretor = ["nome_corretor", "corretor", "responsavel"]
+    col_cor_lead = None
+    for c in possiveis_cols_corretor:
+        if c in df_leads.columns:
+            col_cor_lead = c
+            break
+
+    if col_cor_lead is None:
+        df_leads["CORRETOR_LEAD"] = "NÃO INFORMADO"
+    else:
+        df_leads["CORRETOR_LEAD"] = (
+            df_leads[col_cor_lead]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if "data_captura" in df_leads.columns:
+        df_leads["DATA_CAPTURA"] = pd.to_datetime(
+            df_leads["data_captura"], errors="coerce"
+        )
+        df_leads["DATA_CAPTURA_DATE"] = df_leads["DATA_CAPTURA"].dt.date
+    else:
+        df_leads["DATA_CAPTURA_DATE"] = pd.NaT
+
+    return df_leads
+
+
 # ---------------------------------------------------------
-# CARREGAR DADOS
+# CARREGAR BASES
 # ---------------------------------------------------------
 df_planilha = carregar_df_planilha()
 df_corretores_crm = carregar_corretores()
+df_leads = carregar_leads()
 
 if df_planilha.empty:
     st.error("Não foi possível carregar dados da planilha unificada.")
@@ -396,13 +382,11 @@ if df_corretores_crm.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# TRATAMENTO DA PLANILHA PARA CORRETORES
+# TRATAMENTO PLANILHA / FUNIL
 # ---------------------------------------------------------
-# Considera apenas linhas com ANALISE válida (removendo vazios)
 df_planilha["DIA"] = pd.to_datetime(df_planilha["DIA"], errors="coerce")
 df_planilha["ANO_MES"] = df_planilha["DIA"].dt.to_period("M")
 
-# Normaliza nome do corretor da planilha
 if "CORRETOR" in df_planilha.columns:
     df_planilha["CORRETOR_BASE"] = (
         df_planilha["CORRETOR"]
@@ -414,7 +398,6 @@ if "CORRETOR" in df_planilha.columns:
 else:
     df_planilha["CORRETOR_BASE"] = "NÃO INFORMADO"
 
-# Normaliza equipe
 if "EQUIPE" in df_planilha.columns:
     df_planilha["EQUIPE_BASE"] = (
         df_planilha["EQUIPE"]
@@ -426,34 +409,13 @@ if "EQUIPE" in df_planilha.columns:
 else:
     df_planilha["EQUIPE_BASE"] = "NÃO INFORMADO"
 
-# Normaliza status do funil (já deve existir STATUS_BASE)
 if "STATUS_BASE" not in df_planilha.columns:
     df_planilha["STATUS_BASE"] = ""
 
-# ---------------------------------------------------------
-# CRUZANDO CRM x PLANILHA POR NOME DO CORRETOR
-# ---------------------------------------------------------
-# Nomes padronizados para cruzamento
-df_corretores_crm["NOME_CRM_BASE"] = (
-    df_corretores_crm["NOME_CRM"]
-    .fillna("NÃO INFORMADO")
-    .astype(str)
-    .str.upper()
-    .str.strip()
-)
 
-# Faz um mapeamento de nome do corretor da planilha para nome do CRM
-# (no seu cenário os nomes já estão iguais, então é 1:1)
-df_corretores = df_corretores_crm.copy()
-
-# ---------------------------------------------------------
-# AGREGANDO PRODUÇÃO POR CORRETOR
-# ---------------------------------------------------------
-# Total de análises, aprovações, vendas, VGV etc.
 def agregar_por_corretor(df_base: pd.DataFrame) -> pd.DataFrame:
     df = df_base.copy()
 
-    # Marca flags
     df["FLAG_ANALISE"] = df["STATUS_BASE"].isin(["EM ANÁLISE", "REANÁLISE"])
     df["FLAG_APROVADO"] = df["STATUS_BASE"].eq("APROVADO")
     df["FLAG_REPROVADO"] = df["STATUS_BASE"].eq("REPROVADO")
@@ -465,7 +427,10 @@ def agregar_por_corretor(df_base: pd.DataFrame) -> pd.DataFrame:
     grp = (
         df.groupby("CORRETOR_BASE")
         .agg(
-            EQUIPE=("EQUIPE_BASE", lambda x: x.iloc[0] if len(x) > 0 else "NÃO INFORMADO"),
+            EQUIPE=(
+                "EQUIPE_BASE",
+                lambda x: x.iloc[0] if len(x) > 0 else "NÃO INFORMADO",
+            ),
             QT_ANALISES=("FLAG_ANALISE", "sum"),
             QT_APROVADOS=("FLAG_APROVADO", "sum"),
             QT_REPROVADOS=("FLAG_REPROVADO", "sum"),
@@ -485,8 +450,10 @@ def agregar_por_corretor(df_base: pd.DataFrame) -> pd.DataFrame:
 df_prod_corretor = agregar_por_corretor(df_planilha)
 
 # ---------------------------------------------------------
-# JUNÇÃO COM CRM
+# JUNÇÃO CRM + PRODUÇÃO
 # ---------------------------------------------------------
+df_corretores = df_corretores_crm.copy()
+
 df_corretor_full = pd.merge(
     df_corretores,
     df_prod_corretor,
@@ -495,7 +462,6 @@ df_corretor_full = pd.merge(
     how="left",
 )
 
-# Preenche NaN para corretores sem produção
 for col in [
     "QT_ANALISES",
     "QT_APROVADOS",
@@ -508,47 +474,8 @@ for col in [
         df_corretor_full[col] = df_corretor_full[col].fillna(0)
 
 # ---------------------------------------------------------
-# LEADS POR CORRETOR (via API de leads)
+# LEADS POR CORRETOR
 # ---------------------------------------------------------
-@st.cache_data(ttl=3600)
-def carregar_leads():
-    df_leads = carregar_leads_direto(limit=2000, max_pages=50)
-    if df_leads is None or df_leads.empty:
-        return pd.DataFrame()
-
-    # Normalizar nome do corretor nos leads
-    possiveis_cols_corretor = ["nome_corretor", "corretor", "responsavel"]
-    col_cor_lead = None
-    for c in possiveis_cols_corretor:
-        if c in df_leads.columns:
-            col_cor_lead = c
-            break
-
-    if col_cor_lead is None:
-        df_leads["CORRETOR_LEAD"] = "NÃO INFORMADO"
-    else:
-        df_leads["CORRETOR_LEAD"] = (
-            df_leads[col_cor_lead]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-
-    # Data captura
-    if "data_captura" in df_leads.columns:
-        df_leads["DATA_CAPTURA"] = pd.to_datetime(
-            df_leads["data_captura"], errors="coerce"
-        )
-        df_leads["DATA_CAPTURA_DATE"] = df_leads["DATA_CAPTURA"].dt.date
-    else:
-        df_leads["DATA_CAPTURA_DATE"] = pd.NaT
-
-    return df_leads
-
-
-df_leads = carregar_leads()
-
 df_leads_agg = pd.DataFrame()
 if not df_leads.empty:
     df_leads_agg = (
@@ -558,7 +485,6 @@ if not df_leads.empty:
         .rename(columns={"CORRETOR_LEAD": "CORRETOR_BASE"})
     )
 
-# Junta leads na base do corretor
 df_corretor_full = pd.merge(
     df_corretor_full,
     df_leads_agg,
@@ -572,11 +498,31 @@ else:
     df_corretor_full["QT_LEADS"] = 0
 
 # ---------------------------------------------------------
-# FILTROS NA SIDEBAR
+# DIAS SEM MOVIMENTAÇÃO (BASE PRINCIPAL)
+# ---------------------------------------------------------
+df_mov = (
+    df_planilha.groupby("CORRETOR_BASE")
+    .agg(ULTIMA_DATA=("DIA", "max"))
+    .reset_index()
+)
+
+df_corretor_full = pd.merge(
+    df_corretor_full,
+    df_mov,
+    on="CORRETOR_BASE",
+    how="left",
+)
+
+df_corretor_full["DIAS_SEM_MOV"] = (
+    pd.to_datetime(HOJE) - pd.to_datetime(df_corretor_full["ULTIMA_DATA"])
+).dt.days
+df_corretor_full["DIAS_SEM_MOV"] = df_corretor_full["DIAS_SEM_MOV"].fillna(-1)
+
+# ---------------------------------------------------------
+# FILTROS SIDEBAR
 # ---------------------------------------------------------
 st.sidebar.title("Filtros – Corretores")
 
-# Filtro por equipe
 equipes = (
     df_corretor_full["EQUIPE"]
     .fillna("NÃO INFORMADO")
@@ -596,7 +542,6 @@ df_filtrado = df_corretor_full.copy()
 if equipe_sel != "Todas":
     df_filtrado = df_filtrado[df_filtrado["EQUIPE"] == equipe_sel]
 
-# Filtro por corretor
 corretores = (
     df_filtrado["NOME_CRM_BASE"]
     .fillna("NÃO INFORMADO")
@@ -668,9 +613,13 @@ with c4:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# SEÇÃO: PAINEL DE CORRETORES
+# PAINEL DE CORRETORES
 # ---------------------------------------------------------
-st.markdown('<div class="section-title">Painel de Corretores <span class="small-pill pill-neutro">CRM + Produção</span></div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="section-title">Painel de Corretores '
+    '<span class="small-pill pill-neutro">CRM + Produção</span></div>',
+    unsafe_allow_html=True,
+)
 st.markdown(
     '<div class="section-sub">Uma linha por corretor: CRM, equipe, leads, análises, aprovações, vendas, VGV e dias sem movimento.</div>',
     unsafe_allow_html=True,
@@ -679,31 +628,12 @@ st.markdown(
 if df_filtrado.empty:
     st.info("Nenhum corretor encontrado com os filtros atuais.")
 else:
-    # Enriquecimentos
     df_grid = df_filtrado.copy()
 
-    # Flag aniversário no mês corrente
     mes_atual = HOJE.month
     df_grid["ANIVERSARIO_MES_ATUAL"] = df_grid["ANIVERSARIO_MES"] == mes_atual
     df_grid["ANIVERSARIO_STR"] = df_grid["ANIVERSARIO_RAW"].dt.strftime("%d/%m").fillna("")
 
-    # Dias sem movimentação (baseado na última data que aparece para o corretor na planilha)
-    df_mov = (
-        df_planilha.groupby("CORRETOR_BASE")
-        .agg(ULTIMA_DATA=("DIA", "max"))
-        .reset_index()
-    )
-    df_grid = pd.merge(
-        df_grid,
-        df_mov,
-        on="CORRETOR_BASE",
-        how="left",
-    )
-
-    df_grid["DIAS_SEM_MOV"] = (pd.to_datetime(HOJE) - pd.to_datetime(df_grid["ULTIMA_DATA"])).dt.days
-    df_grid["DIAS_SEM_MOV"] = df_grid["DIAS_SEM_MOV"].fillna(-1)
-
-    # Monta dataframe clean
     colunas_grid = [
         "ID_CRM",
         "NOME_CRM_BASE",
@@ -725,7 +655,6 @@ else:
     colunas_existentes = [c for c in colunas_grid if c in df_grid.columns]
     df_view = df_grid[colunas_existentes].copy()
 
-    # Ajustes de apresentação
     if "CONVERSAO_ANALISE_VENDA" in df_view.columns:
         df_view["CONVERSAO_ANALISE_VENDA"] = (
             df_view["CONVERSAO_ANALISE_VENDA"].fillna(0) * 100
@@ -740,7 +669,6 @@ else:
     if "STATUS_CRM" in df_view.columns:
         df_view["STATUS_CRM"] = df_view["STATUS_CRM"].astype(str)
 
-    # Renomeia colunas
     rename_cols = {
         "ID_CRM": "ID",
         "NOME_CRM_BASE": "Corretor",
@@ -770,9 +698,13 @@ else:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# SEÇÃO: ALERTAS INTELIGENTES
+# ALERTAS INTELIGENTES
 # ---------------------------------------------------------
-st.markdown('<div class="section-title">Alertas Inteligentes <span class="small-pill pill-negativo">Onde focar energia</span></div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="section-title">Alertas Inteligentes '
+    '<span class="small-pill pill-negativo">Onde focar energia</span></div>',
+    unsafe_allow_html=True,
+)
 
 if df_filtrado.empty:
     st.info("Sem dados para gerar alertas com os filtros atuais.")
@@ -842,16 +774,19 @@ else:
             )
 
 # ---------------------------------------------------------
-# SEÇÃO: RANKINGS DE CORRETORES
+# RANKINGS
 # ---------------------------------------------------------
-st.markdown('<div class="section-title">Rankings de Corretores <span class="small-pill pill-neutro">Produção no período</span></div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="section-title">Rankings de Corretores '
+    '<span class="small-pill pill-neutro">Produção no período</span></div>',
+    unsafe_allow_html=True,
+)
 
 if df_filtrado.empty:
     st.info("Sem dados para montar rankings com os filtros atuais.")
 else:
     df_rank = df_filtrado.copy()
 
-    # Ranking por vendas
     rank_vendas = (
         df_rank.sort_values(["QT_VENDAS", "VGV_TOTAL"], ascending=False)
         .loc[:, ["NOME_CRM_BASE", "EQUIPE", "QT_VENDAS", "VGV_TOTAL"]]
@@ -867,7 +802,6 @@ else:
     if not rank_vendas.empty:
         rank_vendas["VGV"] = rank_vendas["VGV"].map(format_currency)
 
-    # Ranking por análises
     rank_analises = (
         df_rank.sort_values("QT_ANALISES", ascending=False)
         .loc[:, ["NOME_CRM_BASE", "EQUIPE", "QT_ANALISES"]]
@@ -880,7 +814,6 @@ else:
         )
     )
 
-    # Ranking por leads
     rank_leads = (
         df_rank.sort_values("QT_LEADS", ascending=False)
         .loc[:, ["NOME_CRM_BASE", "EQUIPE", "QT_LEADS"]]

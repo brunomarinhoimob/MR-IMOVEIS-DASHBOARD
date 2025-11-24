@@ -169,7 +169,6 @@ max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 # ---------------------------------------------------------
 st.sidebar.title("Filtros da visão imobiliária")
 
-# Período por data de movimentação (DIA)
 data_ini_default_mov = max(data_min_mov, (data_max_mov - timedelta(days=30)))
 periodo_mov = st.sidebar.date_input(
     "Período (data de movimentação)",
@@ -431,7 +430,7 @@ else:
                     "Aprovações necessárias (aprox.)",
                     f"{aprovacoes_necessarias} aprovações",
                     help=(
-                        f"Cálculo: {aprovacoes_por_venda:.2f} aprovações/venda × "
+                        f"Cálculo: {aprovações_por_venda:.2f} aprovações/venda × "
                         f"{meta_vendas} vendas planejadas."
                     ),
                 )
@@ -446,6 +445,9 @@ else:
                 "a previsibilidade do funil."
             )
 
+        # -------------------------------------------------
+        # GRÁFICO DE LINHAS – ACOMPANHAMENTO DA META
+        # -------------------------------------------------
         if meta_vendas > 0 and vendas_3m > 0 and not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta no período selecionado")
 
@@ -454,12 +456,11 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            dias_periodo = (
-                df_periodo["DIA"]
-                .dt.date.dropna()
-                .sort_values()
-                .unique()
-            )
+            # Agora o eixo de dias vai de data_ini_mov até data_fim_mov,
+            # mesmo que não tenha movimentação em todos os dias.
+            dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
+            dias_periodo = [d.date() for d in dr]
+
             if len(dias_periodo) == 0:
                 st.info("Não há datas válidas no período filtrado para montar o gráfico.")
             else:
@@ -504,6 +505,7 @@ else:
                     df_line["Real"] = cont_por_dia.values
                     df_line["Real"] = df_line["Real"].cumsum()
 
+                    # Meta distribuída linearmente até a DATA FINAL do filtro
                     df_line["Meta"] = np.linspace(
                         0, total_meta, num=len(df_line), endpoint=True
                     )
@@ -532,6 +534,6 @@ else:
                     st.altair_chart(chart, use_container_width=True)
                     st.caption(
                         "Linha **Real** mostra o acumulado diário do indicador escolhido. "
-                        "Linha **Meta** mostra o ritmo necessário para atingir a meta "
-                        "no fim do período."
+                        "Linha **Meta** vai até a **data final escolhida** e mostra o ritmo "
+                        "necessário para atingir a meta no fim do período."
                     )

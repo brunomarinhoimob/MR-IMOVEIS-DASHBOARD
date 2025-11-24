@@ -39,6 +39,15 @@ st.markdown(
         box-shadow: 0 18px 40px rgba(0,0,0,0.6);
         margin-bottom: 1.5rem;
         border: 1px solid #1f2937;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+    }
+    .top-banner-logo {
+        background: #020617;
+        border-radius: 14px;
+        padding: 8px 10px;
+        border: 1px solid #1f2937;
     }
     .top-banner-title {
         font-size: 1.6rem;
@@ -119,27 +128,32 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# TOPO DA PÁGINA (LOGO + TÍTULO)
+# CABEÇALHO (LOGO + TÍTULO)
 # ---------------------------------------------------------
 with st.container():
-    col_logo, col_text = st.columns([1, 4])
-    with col_logo:
-        # logo_mr.png deve estar na raiz do projeto ou em caminho acessível
-        st.image("logo_mr.png", use_column_width=True)
-    with col_text:
-        st.markdown(
-            """
-            <div class="top-banner">
+    st.markdown(
+        """
+        <div class="top-banner">
+            <div class="top-banner-logo">
+        """,
+        unsafe_allow_html=True,
+    )
+    # se a logo estiver em outra pasta, ajustar caminho aqui
+    st.image("logo_mr.png", width=120)
+    st.markdown(
+        """
+            </div>
+            <div>
                 <div class="top-banner-title">Corretores – Visão Geral</div>
                 <p class="top-banner-subtitle">
                     Integração <b>Supremo CRM + planilha de produção</b> para mostrar um
-                    panorama completo de corretores, equipes, leads, análises, aprovações
-                    e vendas.
+                    panorama completo de corretores, equipes, leads, análises, aprovações e vendas.
                 </p>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
@@ -156,7 +170,7 @@ def format_currency(valor: float) -> str:
 
 
 def safe_div(num, den):
-    if den in (0, None) or pd.isna(den):
+    if den in (0, None) or pd.isna(den) or den == 0:
         return 0.0
     return num / den
 
@@ -177,6 +191,7 @@ BASE_URL_CORRETORES = "https://api.supremocrm.com.br/v1/corretores"
 
 @st.cache_data(ttl=3600)
 def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
+    """Busca todos os corretores no Supremo e devolve apenas os ATIVOS."""
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
     dfs = []
     pagina = 1
@@ -265,7 +280,7 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
     else:
         df_all["NOME_CRM"] = "NÃO INFORMADO"
 
-    # Status normalizado (e depois filtra só ATIVO)
+    # Status normalizado
     if "status" in df_all.columns:
         def map_status(x):
             s = str(x).strip().upper()
@@ -327,6 +342,9 @@ def carregar_corretores(max_pages: int = 50) -> pd.DataFrame:
         .str.upper()
         .str.strip()
     )
+
+    # limpa nulos do DF inteiro (aqui é DataFrame mesmo)
+    df_all = df_all.fillna("")
 
     return df_all
 
@@ -597,7 +615,7 @@ with c3:
     st.markdown('<div class="metric-label">Análises realizadas (planilha)</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="metric-value">{int(soma_analises)}</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="metric-help">Análises (EM ANÁLISE + REANÁLISE) registradas.</div>',
+        '<div class="metric-help">EM ANÁLISE + REANÁLISE registradas para esses corretores.</div>',
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -650,7 +668,6 @@ else:
         "CONVERSAO_ANALISE_VENDA",
         "DIAS_SEM_MOV",
         "ANIVERSARIO_STR",
-        "ANIVERSARIO_MES_ATUAL",
     ]
     colunas_existentes = [c for c in colunas_grid if c in df_grid.columns]
     df_view = df_grid[colunas_existentes].copy()
@@ -665,9 +682,6 @@ else:
 
     if "VGV_TOTAL" in df_view.columns:
         df_view["VGV_TOTAL"] = df_view["VGV_TOTAL"].map(format_currency)
-
-    if "STATUS_CRM" in df_view.columns:
-        df_view["STATUS_CRM"] = df_view["STATUS_CRM"].astype(str)
 
     rename_cols = {
         "ID_CRM": "ID",
@@ -719,7 +733,7 @@ else:
     cond_zero_vendas = df_alerta["QT_VENDAS"] == 0
     muita_analise_sem_venda = df_alerta[cond_muitas_analises & cond_zero_vendas]
 
-    # Alerta 3: corretores há muitos dias sem movimentação
+    # Alerta 3: corretores há muitos dias sem movimentação (>= 7)
     cond_sem_mov = df_alerta["DIAS_SEM_MOV"] >= 7
     muito_tempo_sem_mov = df_alerta[cond_sem_mov]
 

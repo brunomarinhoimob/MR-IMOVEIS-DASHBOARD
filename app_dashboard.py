@@ -159,7 +159,7 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# LEADS – API SUPREMO (AGORA COM CACHE 1 HORA)
+# LEADS – API SUPREMO (AGORA COM CACHE 1 HORA E COLUNAS NORMALIZADAS)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
@@ -169,6 +169,10 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
     """
     Carrega leads da API do Supremo.
     Cache de 1 hora para evitar múltiplas chamadas pesadas.
+    Normaliza:
+      - data_captura -> datetime + data_captura_date
+      - nome_corretor_norm (maiúsculo)
+      - equipe_lead_norm, se existir coluna de equipe.
     """
     headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
@@ -215,13 +219,44 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 
     df_all = pd.concat(dfs, ignore_index=True)
 
+    # Remove duplicados por ID (se existir)
     if "id" in df_all.columns:
         df_all = df_all.drop_duplicates(subset="id")
 
+    # Datas
     if "data_captura" in df_all.columns:
         df_all["data_captura"] = pd.to_datetime(
             df_all["data_captura"], errors="coerce"
         )
+        df_all["data_captura_date"] = df_all["data_captura"].dt.date
+    else:
+        df_all["data_captura_date"] = pd.NaT
+
+    # Nome do corretor (para filtro por corretor)
+    if "nome_corretor" in df_all.columns:
+        df_all["nome_corretor_norm"] = (
+            df_all["nome_corretor"]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    else:
+        df_all["nome_corretor_norm"] = "NÃO INFORMADO"
+
+    # Equipe do lead, se existir
+    possiveis_equipes = ["equipe", "nome_equipe", "equipe_nome", "nome_equipe_lead"]
+    col_equipe = next((c for c in possiveis_equipes if c in df_all.columns), None)
+    if col_equipe:
+        df_all["equipe_lead_norm"] = (
+            df_all[col_equipe]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    else:
+        df_all["equipe_lead_norm"] = "NÃO INFORMADO"
 
     return df_all.head(limit)
 
@@ -264,7 +299,7 @@ lista_corretor = sorted(base_cor["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
 # ---------------------------------------------------------
-# FILTRO PRINCIPAL
+# FILTRO PRINCIPAL NA PLANILHA
 # ---------------------------------------------------------
 df_filtrado = df[
     (df["DIA"] >= data_ini) &
@@ -289,7 +324,7 @@ st.caption(
 )
 
 # ---------------------------------------------------------
-# CÁLCULOS PRINCIPAIS
+# CÁLCULOS PRINCIPAIS (PLANILHA)
 # ---------------------------------------------------------
 em_analise = (df_filtrado["STATUS_BASE"] == "EM ANÁLISE").sum()
 reanalise = (df_filtrado["STATUS_BASE"] == "REANÁLISE").sum()
@@ -332,7 +367,7 @@ taxa_venda_analise = (vendas_total / analises_total * 100) if analises_total els
 taxa_venda_aprov = (vendas_total / aprovacoes * 100) if aprovacoes else 0
 
 # ---------------------------------------------------------
-# CARDS
+# CARDS – ANÁLISES & VENDAS
 # ---------------------------------------------------------
 st.subheader("Resumo de Análises & Vendas")
 
@@ -353,40 +388,59 @@ c9.metric("Vendas/Análises", f"{taxa_venda_analise:.1f}%")
 c10.metric("Vendas/Aprovações", f"{taxa_venda_aprov:.1f}%")
 
 # ---------------------------------------------------------
-# LEADS – RESUMO
+# LEADS – RESUMO (RESPEITANDO PERÍODO + EQUIPE + CORRETOR)
 # ---------------------------------------------------------
 st.markdown("---")
 st.subheader("📈 Resumo de Leads (Supremo CRM)")
 
 df_leads_use = df_leads.copy()
 
-if not df_leads_use.empty and "data_captura" in df_leads_use.columns:
-    df_leads_use = df_leads_use.dropna(subset=["data_captura"])
-    df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
-
+if not df_leads_use.empty and "data_captura_date" in df_leads_use.columns:
+    # Filtro por período
+    df_leads_use = df_leads_use.dropna(subset=["data_captura_date"])
     df_leads_use = df_leads_use[
-        (df_leads_use["data_captura_date"] >= data_ini) &
-        (df_leads_use["data_captura_date"] <= data_fim)
+        (df_leads_use["data_captura_date"] >= data_ini)
+        & (df_leads_use["data_captura_date"] <= data_fim)
     ]
+
+    # Filtro por equipe (se tiver coluna de equipe nos leads)
+    if equipe_sel != "Todas" and "equipe_lead_norm" in df_leads_use.columns:
+        df_leads_use = df_leads_use[
+            df_leads_use["equipe_lead_norm"] == equipe_sel
+        ]
+
+    # Filtro por corretor
+    if corretor_sel != "Todos" and "nome_corretor_norm" in df_leads_use.columns:
+        df_leads_use = df_leads_use[
+            df_leads_use["nome_corretor_norm"] == corretor_sel
+        ]
 
     total_leads_periodo = len(df_leads_use)
 
+    # Texto dinâmico da métrica principal
+    if corretor_sel != "Todos":
+        label_leads = "Leads do corretor (período filtrado)"
+    elif equipe_sel != "Todas":
+        label_leads = "Leads da equipe (período filtrado)"
+    else:
+        label_leads = "Leads da imobiliária (período filtrado)"
+
     cL1, cL2, cL3 = st.columns(3)
-    cL1.metric("Leads recebidos", total_leads_periodo)
+    cL1.metric(label_leads, total_leads_periodo)
 
-    if "nome_corretor" in df_leads_use.columns:
-        df_leads_use["nome_corretor_norm"] = (
-            df_leads_use["nome_corretor"].astype(str).str.upper().str.strip()
-        )
-
+    # Corretores com leads nesse filtro
+    if "nome_corretor_norm" in df_leads_use.columns and not df_leads_use.empty:
         qtd_corretor = df_leads_use["nome_corretor_norm"].nunique()
-        cL2.metric("Corretores ativos", qtd_corretor)
+        cL2.metric("Corretores com leads no período", qtd_corretor)
 
         if qtd_corretor > 0:
             media_leads = total_leads_periodo / qtd_corretor
-            cL3.metric("Média por corretor", f"{media_leads:.1f}")
+            cL3.metric("Média de leads por corretor", f"{media_leads:.1f}")
         else:
-            cL3.metric("Média por corretor", "-")
+            cL3.metric("Média de leads por corretor", "-")
+    else:
+        cL2.metric("Corretores com leads no período", "-")
+        cL3.metric("Média de leads por corretor", "-")
 else:
     st.info("Nenhum lead carregado ou campo 'data_captura' ausente na base.")
 

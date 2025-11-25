@@ -264,7 +264,7 @@ else:
 lista_corretor = sorted(base_corretor["CORRETOR"].dropna().unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-# 🔹 META DE VENDAS – AGORA AJUSTÁVEL POR SLIDER
+# 🔹 META DE VENDAS – AJUSTÁVEL POR SLIDER
 meta_vendas = st.sidebar.slider(
     "Meta de vendas (qtde) para o período",
     min_value=0,
@@ -427,23 +427,67 @@ else:
     )
     st.altair_chart(chart_vgv_dia, use_container_width=True)
 
-    # VGV acumulado (linha)
+    # VGV acumulado (linha) + linha de meta
     df_vendas_dia["VGV_ACUM"] = df_vendas_dia["VGV_DIA"].cumsum()
 
     st.markdown("### 📊 VGV acumulado no período")
-    chart_vgv_acum = (
-        alt.Chart(df_vendas_dia)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("DIA_STR:N", title="Dia"),
-            y=alt.Y("VGV_ACUM:Q", title="VGV acumulado (R$)"),
-            tooltip=[
-                alt.Tooltip("DIA_STR:N", title="Dia"),
-                alt.Tooltip("VGV_ACUM:Q", title="VGV acumulado", format=",.2f"),
-            ],
+
+    # Calcula meta acumulada de VGV com base na meta de vendas (qtde) e ticket médio
+    n_dias = len(df_vendas_dia)
+    if meta_vendas > 0 and ticket_medio > 0 and n_dias > 0:
+        meta_total_vgv = meta_vendas * ticket_medio
+        meta_diaria_vgv = meta_total_vgv / n_dias
+        # cria coluna de meta acumulada ao longo dos dias
+        df_vendas_dia["META_VGV_ACUM"] = [
+            meta_diaria_vgv * (i + 1) for i in range(n_dias)
+        ]
+    else:
+        df_vendas_dia["META_VGV_ACUM"] = np.nan
+
+    # Monta gráfico com duas linhas: realizado x meta
+    if df_vendas_dia["META_VGV_ACUM"].notna().any():
+        df_plot = df_vendas_dia[["DIA_STR", "VGV_ACUM", "META_VGV_ACUM"]].copy()
+        df_plot = df_plot.melt(
+            id_vars=["DIA_STR"],
+            value_vars=["VGV_ACUM", "META_VGV_ACUM"],
+            var_name="Série",
+            value_name="VGV_VAL",
         )
-        .properties(height=300)
-    )
+        df_plot["Série"] = df_plot["Série"].replace(
+            {"VGV_ACUM": "Realizado", "META_VGV_ACUM": "Meta"}
+        )
+
+        chart_vgv_acum = (
+            alt.Chart(df_plot)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("DIA_STR:N", title="Dia"),
+                y=alt.Y("VGV_VAL:Q", title="VGV acumulado (R$)"),
+                color=alt.Color("Série:N", title=""),
+                tooltip=[
+                    alt.Tooltip("DIA_STR:N", title="Dia"),
+                    alt.Tooltip("Série:N", title="Série"),
+                    alt.Tooltip("VGV_VAL:Q", title="VGV acumulado", format=",.2f"),
+                ],
+            )
+            .properties(height=300)
+        )
+    else:
+        # Se não houver meta configurada, mostra apenas o realizado
+        chart_vgv_acum = (
+            alt.Chart(df_vendas_dia)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("DIA_STR:N", title="Dia"),
+                y=alt.Y("VGV_ACUM:Q", title="VGV acumulado (R$)"),
+                tooltip=[
+                    alt.Tooltip("DIA_STR:N", title="Dia"),
+                    alt.Tooltip("VGV_ACUM:Q", title="VGV acumulado", format=",.2f"),
+                ],
+            )
+            .properties(height=300)
+        )
+
     st.altair_chart(chart_vgv_acum, use_container_width=True)
 
 

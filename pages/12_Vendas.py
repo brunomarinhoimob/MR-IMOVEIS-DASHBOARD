@@ -21,7 +21,7 @@ st.caption(
 )
 
 # ---------------------------------------------------------
-# CONFIG: LINK DA PLANILHA
+# LINK DA PLANILHA
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID_ANALISES = "1574157905"
@@ -36,9 +36,11 @@ def limpar_para_data(serie):
 @st.cache_data(ttl=60)
 def carregar_dados():
     df = pd.read_csv(CSV_URL)
+
+    # Padroniza colunas
     df.columns = [c.strip().upper() for c in df.columns]
 
-    # DATA / DIA
+    # DATA / DIA (primeiro como date)
     if "DATA" in df.columns:
         df["DIA"] = limpar_para_data(df["DATA"])
     elif "DIA" in df.columns:
@@ -98,7 +100,7 @@ def carregar_dados():
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 
-    # VGV
+    # VGV (OBSERVAÇÕES)
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
     else:
@@ -130,66 +132,76 @@ if df.empty:
     st.error("Não foi possível carregar dados da planilha.")
     st.stop()
 
-# LEADS DO SUPREMO (se existir no session_state)
+# Agora DIA vira datetime (igual Funil Imobiliária)
+df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
+
+# Leads do Supremo se tiver no session_state
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 
 def conta_aprovacoes(s):
-    return (s == "APROVADO").sum()
+    return (s.fillna("").astype(str).str.upper() == "APROVADO").sum()
 
 
 def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
-    df_v = df_scope[df_scope["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    """Uma venda por cliente (último status VENDA GERADA / INFORMADA)."""
+    if df_scope.empty:
+        return df_scope.copy()
+
+    s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
+    df_v = df_scope[s.isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
     if df_v.empty:
         return df_v
 
     df_v["CHAVE_CLIENTE"] = (
-        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
         + " | "
-        + df_v["CPF_CLIENTE_BASE"].fillna("")
+        + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
+
     df_v = df_v.sort_values("DIA")
-    df_v_ult = df_v.groupby("CHAVE_CLIENTE").tail(1)
-    return df_v_ult
+    df_ult = df_v.groupby("CHAVE_CLIENTE").tail(1).copy()
+    return df_ult
+
+
+def format_currency(valor: float) -> str:
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 # ---------------------------------------------------------
-# SIDEBAR – FILTROS
+# DEFINIÇÃO DO PERÍODO (MESMA LÓGICA DO FUNIL) :contentReference[oaicite:1]{index=1}
 # ---------------------------------------------------------
+hoje = date.today()
+dias_validos = df["DIA"].dropna()
+
+if dias_validos.empty:
+    data_min_mov = hoje - timedelta(days=30)
+    data_max_mov = hoje
+else:
+    data_min_mov = dias_validos.min().date()
+    data_max_mov = dias_validos.max().date()
+
+# pode escolher data futura até +365 dias
+max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
+
 st.sidebar.title("Filtros 🔎")
 
-hoje = date.today()
-dias_validos = pd.Series(df["DIA"].dropna())
-
-if not dias_validos.empty:
-    data_min = dias_validos.min()
-    data_max_base = dias_validos.max()
-else:
-    data_max_base = hoje
-    data_min = hoje - timedelta(days=30)
-
-data_ini_default = max(data_min, data_max_base - timedelta(days=30))
-data_fim_default = max(data_max_base, hoje)
-max_picker = hoje + timedelta(days=365)
-
-periodo = st.sidebar.date_input(
-    "Período das vendas",
-    value=(data_ini_default, data_fim_default),
-    min_value=data_min,
-    max_value=max_picker,
+data_ini_default_mov = max(data_min_mov, data_max_mov - timedelta(days=30))
+periodo_mov = st.sidebar.date_input(
+    "Período das vendas (data de movimentação)",
+    value=(data_ini_default_mov, data_max_mov),
+    min_value=data_min_mov,
+    max_value=max_futuro,
 )
 
-if isinstance(periodo, tuple) and len(periodo) == 2:
-    data_ini_sel, data_fim_sel = periodo
+if isinstance(periodo_mov, tuple) and len(periodo_mov) == 2:
+    data_ini_mov, data_fim_mov = periodo_mov
 else:
-    data_ini_sel, data_fim_sel = data_ini_default, data_fim_default
+    data_ini_mov = periodo_mov
+    data_fim_mov = periodo_mov
 
-if data_ini_sel > data_fim_sel:
-    st.sidebar.error("Data inicial não pode ser maior que a data final.")
-    st.stop()
-
-# data real considerada pros dados (não passa de hoje)
-data_fim_real = min(data_fim_sel, hoje)
+if data_ini_mov > data_fim_mov:
+    data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
 
 # Filtro de equipe / corretor
 lista_equipes = sorted(df["EQUIPE"].dropna().unique())
@@ -199,7 +211,7 @@ base_corretor = df if equipe_sel == "Todas" else df[df["EQUIPE"] == equipe_sel]
 lista_corretor = sorted(base_corretor["CORRETOR"].dropna().unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
 
-# Meta de vendas
+# Meta de vendas (qtde) – slider
 meta_vendas = st.sidebar.slider(
     "Meta de vendas (qtde) para o período",
     min_value=0,
@@ -209,12 +221,10 @@ meta_vendas = st.sidebar.slider(
 )
 
 # ---------------------------------------------------------
-# APLICA FILTROS NOS DADOS (USANDO data_fim_real)
+# APLICA FILTROS NO DATAFRAME
 # ---------------------------------------------------------
-df_periodo = df.copy()
-dia_series_all = limpar_para_data(df_periodo["DIA"])
-mask_data = (dia_series_all >= data_ini_sel) & (dia_series_all <= data_fim_real)
-df_periodo = df_periodo[mask_data]
+mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
+df_periodo = df[mask_mov].copy()
 
 if equipe_sel != "Todas":
     df_periodo = df_periodo[df_periodo["EQUIPE"] == equipe_sel]
@@ -223,59 +233,51 @@ if corretor_sel != "Todos":
 
 registros_filtrados = len(df_periodo)
 
-texto_periodo = (
-    f"Período selecionado: **{data_ini_sel.strftime('%d/%m/%Y')}** "
-    f"até **{data_fim_sel.strftime('%d/%m/%Y')}**"
+st.caption(
+    f"Período (movimentação): **{data_ini_mov.strftime('%d/%m/%Y')}** até "
+    f"**{data_fim_mov.strftime('%d/%m/%Y')}** • Registros na base: **{registros_filtrados}**"
+    + (f" • Equipe: **{equipe_sel}**" if equipe_sel != "Todas" else "")
+    + (f" • Corretor: **{corretor_sel}**" if corretor_sel != "Todos" else "")
 )
-if data_fim_real < data_fim_sel:
-    texto_periodo += f" • Dados considerados até **{data_fim_real.strftime('%d/%m/%Y')}**"
-
-texto_periodo += f" • Registros na base: **{registros_filtrados}**"
-if equipe_sel != "Todas":
-    texto_periodo += f" • Equipe: **{equipe_sel}**"
-if corretor_sel != "Todos":
-    texto_periodo += f" • Corretor: **{corretor_sel}**"
-
-st.caption(texto_periodo)
 
 if df_periodo.empty:
-    st.warning("Não há registros para os filtros selecionados.")
+    st.warning("Nenhum registro encontrado para o período selecionado.")
     st.stop()
 
 # ---------------------------------------------------------
-# VENDAS ÚNICAS / KPIs
+# VENDAS ÚNICAS E KPIs
 # ---------------------------------------------------------
 df_vendas = obter_vendas_unicas(df_periodo)
 qtd_vendas = len(df_vendas)
-vgv_total = df_vendas["VGV"].sum()
-ticket_medio = vgv_total / qtd_vendas if qtd_vendas > 0 else 0
+vgv_total = df_vendas["VGV"].sum() if not df_vendas.empty else 0.0
+ticket_medio = vgv_total / qtd_vendas if qtd_vendas > 0 else 0.0
 
 qtd_aprovacoes = conta_aprovacoes(df_periodo["STATUS_BASE"])
-taxa_venda_aprov = (qtd_vendas / qtd_aprovacoes * 100) if qtd_aprovacoes > 0 else 0
+taxa_venda_aprov = (qtd_vendas / qtd_aprovacoes * 100) if qtd_aprovacoes > 0 else 0.0
 
-# Leads do CRM também limitados até data_fim_real
-df_leads = st.session_state.get("df_leads", pd.DataFrame())
+# Leads do CRM no período (mesma lógica de datas do funil)
 total_leads_periodo = None
+leads_por_venda = None
+
 if not df_leads.empty and "data_captura" in df_leads.columns:
     df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
     df_leads_use["data_captura"] = pd.to_datetime(df_leads_use["data_captura"], errors="coerce")
     df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
     mask_leads_periodo = (
-        (df_leads_use["data_captura_date"] >= data_ini_sel)
-        & (df_leads_use["data_captura_date"] <= data_fim_real)
+        (df_leads_use["data_captura_date"] >= data_ini_mov)
+        & (df_leads_use["data_captura_date"] <= data_fim_mov)
     )
     df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
     total_leads_periodo = len(df_leads_periodo)
 
-leads_por_venda = (
-    total_leads_periodo / qtd_vendas if total_leads_periodo is not None and qtd_vendas > 0 else None
-)
+    if total_leads_periodo > 0 and qtd_vendas > 0:
+        leads_por_venda = total_leads_periodo / qtd_vendas
 
-perc_meta = (qtd_vendas / meta_vendas * 100) if meta_vendas > 0 else 0
+perc_meta = (qtd_vendas / meta_vendas * 100) if meta_vendas > 0 else 0.0
 
 # ---------------------------------------------------------
-# KPIs
+# CARDS PRINCIPAIS
 # ---------------------------------------------------------
 st.markdown("## 🏅 Placar de Vendas do Período")
 
@@ -283,12 +285,9 @@ c1, c2, c3, c4, c5, c6 = st.columns(6)
 with c1:
     st.metric("Vendas no período", qtd_vendas)
 with c2:
-    st.metric("VGV Total", f"R$ {vgv_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    st.metric("VGV Total", format_currency(vgv_total))
 with c3:
-    st.metric(
-        "Ticket médio",
-        f"R$ {ticket_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
-    )
+    st.metric("Ticket médio", format_currency(ticket_medio) if ticket_medio > 0 else "R$ 0,00")
 with c4:
     st.metric("Meta de vendas (qtde)", meta_vendas)
 with c5:
@@ -303,7 +302,7 @@ with c8:
     st.metric("Leads por venda (CRM)", "-" if leads_por_venda is None else f"{leads_por_venda:.1f}")
 
 # ---------------------------------------------------------
-# EVOLUÇÃO DIÁRIA
+# EVOLUÇÃO DIÁRIA – VGV E LINHA DE META (COPIANDO LÓGICA DO FUNIL)
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📈 Evolução diária das vendas")
@@ -311,74 +310,88 @@ st.markdown("## 📈 Evolução diária das vendas")
 if df_vendas.empty:
     st.info("Ainda não há vendas no período selecionado.")
 else:
-    # base real de vendas por dia (até data_fim_real)
-    df_vendas_dia_real = (
-        df_vendas.groupby("DIA")
-        .agg(
-            VGV_DIA=("VGV", "sum"),
-            QTD_VENDAS=("STATUS_BASE", "count"),
-        )
-        .reset_index()
-    )
+    # calendário completo do período selecionado
+    dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
+    dias_periodo = [d.date() for d in dr]
 
-    # calendário completo do período selecionado (data_ini_sel -> data_fim_sel)
-    datas_range = pd.date_range(start=data_ini_sel, end=data_fim_sel, freq="D")
-    df_dias = pd.DataFrame({"DIA": datas_range.date})
-
-    # junta vendas nesse calendário
-    df_vendas_dia = df_dias.merge(df_vendas_dia_real, on="DIA", how="left")
-    df_vendas_dia["VGV_DIA"] = df_vendas_dia["VGV_DIA"].fillna(0.0)
-    df_vendas_dia["QTD_VENDAS"] = df_vendas_dia["QTD_VENDAS"].fillna(0).astype(int)
-    df_vendas_dia = df_vendas_dia.sort_values("DIA")
-
-    df_vendas_dia["DIA_STR"] = pd.to_datetime(df_vendas_dia["DIA"]).dt.strftime("%d/%m")
-
-    # VGV por dia (barras) – vai mostrar só onde houve venda > 0
-    st.markdown("### 💵 VGV por dia")
-    chart_vgv_dia = (
-        alt.Chart(df_vendas_dia[df_vendas_dia["VGV_DIA"] > 0])
-        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-        .encode(
-            x=alt.X("DIA_STR:N", title="Dia"),
-            y=alt.Y("VGV_DIA:Q", title="VGV do dia (R$)"),
-            tooltip=[
-                alt.Tooltip("DIA_STR:N", title="Dia"),
-                alt.Tooltip("VGV_DIA:Q", title="VGV do dia", format=",.2f"),
-                alt.Tooltip("QTD_VENDAS:Q", title="Qtde de vendas"),
-            ],
-        )
-        .properties(height=300)
-    )
-    st.altair_chart(chart_vgv_dia, use_container_width=True)
-
-    # VGV acumulado + meta acumulada
-    st.markdown("### 📊 VGV acumulado no período")
-    df_vendas_dia["VGV_ACUM"] = df_vendas_dia["VGV_DIA"].cumsum()
-
-    n_dias_periodo = len(df_vendas_dia)
-    if meta_vendas > 0 and ticket_medio > 0 and n_dias_periodo > 0:
-        meta_total_vgv = meta_vendas * ticket_medio
-        meta_diaria_vgv = meta_total_vgv / n_dias_periodo
-        df_vendas_dia["META_VGV_ACUM"] = [
-            meta_diaria_vgv * (i + 1) for i in range(n_dias_periodo)
-        ]
+    if len(dias_periodo) == 0:
+        st.info("Não há datas válidas no período filtrado para montar os gráficos.")
     else:
-        df_vendas_dia["META_VGV_ACUM"] = np.nan
+        idx = pd.to_datetime(dias_periodo)
+        df_line = pd.DataFrame(index=idx)
+        df_line.index.name = "DIA"
 
-    if df_vendas_dia["META_VGV_ACUM"].notna().any():
-        df_plot = df_vendas_dia[["DIA_STR", "VGV_ACUM", "META_VGV_ACUM"]].copy()
-        df_plot = df_plot.melt(
-            id_vars=["DIA_STR"],
-            value_vars=["VGV_ACUM", "META_VGV_ACUM"],
-            var_name="Série",
-            value_name="VGV_VAL",
-        )
-        df_plot["Série"] = df_plot["Série"].replace(
-            {"VGV_ACUM": "Realizado", "META_VGV_ACUM": "Meta"}
+        # VGV por dia (somando vendas únicas)
+        df_temp = df_vendas.copy()
+        df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"]).dt.date
+        vgv_por_dia = (
+            df_temp.groupby("DIA_DATA")["VGV"]
+            .sum()
+            .reindex(dias_periodo, fill_value=0.0)
         )
 
-        chart_vgv_acum = (
-            alt.Chart(df_plot)
+        df_line["VGV_DIA"] = vgv_por_dia.values
+        df_line["VGV_ACUM"] = df_line["VGV_DIA"].cumsum()
+
+        # gráfico de barras VGV por dia (apenas dias com VGV > 0)
+        df_barras = df_line.reset_index().copy()
+        df_barras["DIA_STR"] = df_barras["DIA"].dt.strftime("%d/%m")
+
+        st.markdown("### 💵 VGV por dia")
+        chart_vgv_dia = (
+            alt.Chart(df_barras[df_barras["VGV_DIA"] > 0])
+            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+            .encode(
+                x=alt.X("DIA_STR:N", title="Dia"),
+                y=alt.Y("VGV_DIA:Q", title="VGV do dia (R$)"),
+                tooltip=[
+                    alt.Tooltip("DIA_STR:N", title="Dia"),
+                    alt.Tooltip("VGV_DIA:Q", title="VGV do dia", format=",.2f"),
+                ],
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(chart_vgv_dia, use_container_width=True)
+
+        # --------- VGV acumulado x Meta (mesma pegada do gráfico do funil) ---------
+        st.markdown("### 📊 VGV acumulado no período")
+
+        # linha Real: corta depois do dia de hoje
+        hoje_date = date.today()
+        limite_real = min(hoje_date, data_fim_mov)
+        mask_future = df_line.index.date > limite_real
+        df_line_real = df_line.copy()
+        df_line_real.loc[mask_future, "VGV_ACUM"] = np.nan
+
+        # linha Meta: VGV alvo = meta_vendas * ticket_medio, distribuído no período todo
+        if meta_vendas > 0 and ticket_medio > 0:
+            meta_total_vgv = meta_vendas * ticket_medio
+            df_line_real["META_ACUM"] = np.linspace(
+                0, meta_total_vgv, num=len(df_line_real), endpoint=True
+            )
+        else:
+            df_line_real["META_ACUM"] = np.nan
+
+        df_plot = df_line_real.reset_index().copy()
+        df_plot["DIA_STR"] = df_plot["DIA"].dt.strftime("%d/%m")
+
+        if df_plot["META_ACUM"].notna().any():
+            df_melt = df_plot.melt(
+                id_vars=["DIA", "DIA_STR"],
+                value_vars=["VGV_ACUM", "META_ACUM"],
+                var_name="Série",
+                value_name="VGV_VAL",
+            )
+            df_melt["Série"] = df_melt["Série"].replace(
+                {"VGV_ACUM": "Realizado", "META_ACUM": "Meta"}
+            )
+        else:
+            df_melt = df_plot[["DIA", "DIA_STR", "VGV_ACUM"]].copy()
+            df_melt = df_melt.rename(columns={"VGV_ACUM": "VGV_VAL"})
+            df_melt["Série"] = "Realizado"
+
+        chart_acum = (
+            alt.Chart(df_melt)
             .mark_line(point=True)
             .encode(
                 x=alt.X("DIA_STR:N", title="Dia"),
@@ -390,24 +403,31 @@ else:
                     alt.Tooltip("VGV_VAL:Q", title="VGV acumulado", format=",.2f"),
                 ],
             )
-            .properties(height=300)
-        )
-    else:
-        chart_vgv_acum = (
-            alt.Chart(df_vendas_dia)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("DIA_STR:N", title="Dia"),
-                y=alt.Y("VGV_ACUM:Q", title="VGV acumulado (R$)"),
-                tooltip=[
-                    alt.Tooltip("DIA_STR:N", title="Dia"),
-                    alt.Tooltip("VGV_ACUM:Q", title="VGV acumulado", format=",.2f"),
-                ],
-            )
-            .properties(height=300)
+            .properties(height=320)
         )
 
-    st.altair_chart(chart_vgv_acum, use_container_width=True)
+        # ponto destacando o dia de hoje se estiver no período
+        hoje_dentro = (hoje_date >= data_ini_mov) and (hoje_date <= data_fim_mov)
+        if hoje_dentro:
+            df_real_reset = df_line_real.reset_index()
+            df_real_hoje = df_real_reset[df_real_reset["DIA"].dt.date == limite_real]
+            if not df_real_hoje.empty:
+                ponto_hoje = (
+                    alt.Chart(df_real_hoje.assign(DIA_STR=df_real_hoje["DIA"].dt.strftime("%d/%m")))
+                    .mark_point(size=80)
+                    .encode(
+                        x="DIA_STR:N",
+                        y="VGV_ACUM:Q",
+                    )
+                )
+                chart_acum = chart_acum + ponto_hoje
+
+        st.altair_chart(chart_acum, use_container_width=True)
+        st.caption(
+            "Linha **Realizado** mostra o VGV acumulado por dia e para no **dia de hoje**. "
+            "Linha **Meta** vai até a data final escolhida e mostra o ritmo de VGV necessário "
+            "para bater a meta de vendas configurada no período."
+        )
 
 # ---------------------------------------------------------
 # RANKING POR EQUIPE

@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import timedelta
+from datetime import timedelta, date
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -99,7 +99,8 @@ def carregar_dados():
         df.loc[status.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        df.loc[status.str.contains("PENDEN"), "STATUS_BASE"] = "PENDÊNCIA"
+        # CORREÇÃO: tornar mapeamento de pendência mais abrangente (funciona com acento / variações)
+        df.loc[status.str.contains("PEND", na=False), "STATUS_BASE"] = "PENDÊNCIA"
 
     # NOME / CPF BASE (para chave do cliente)
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
@@ -161,6 +162,9 @@ if pd.isna(data_ref_geral_ts):
     st.stop()
 data_ref_geral_date = data_ref_geral_ts.date()
 
+# Também vamos usar a data de hoje para alguns cálculos (pendência)
+hoje = date.today()
+
 # ---------------------------------------------------------
 # 1) CORRETORES SEM ANÁLISE HÁ 3+ DIAS (JANELA 30 DIAS)
 # ---------------------------------------------------------
@@ -182,8 +186,8 @@ else:
 
     # Mantém análises dentro dos últimos 30 dias
     df_analise_30 = df_analise_base[
-        (df_analise_base["DT_BASE"] >= data_inicio_janela)
-        & (df_analise_base["DT_BASE"] <= data_ref)
+        (df_analise_30["DT_BASE"] >= data_inicio_janela)
+        & (df_analise_30["DT_BASE"] <= data_ref)
     ].copy()
 
     if df_analise_30.empty:
@@ -276,11 +280,12 @@ else:
     if df_pendentes.empty:
         st.success("✅ Não há clientes com pendência como última ação.")
     else:
-        # diferença de dias usando Timestamp
+        # CORREÇÃO: diferença de dias usando a data de hoje (e não só última data da base)
         df_pendentes["DIAS_DESDE_PENDENCIA"] = (
-            data_ref_geral_ts - df_pendentes["DT_BASE"]
+            hoje - df_pendentes["DT_BASE"].dt.date
         ).dt.days
 
+        # filtra quem está há 2 dias ou mais parado em pendência
         df_pendentes = df_pendentes[df_pendentes["DIAS_DESDE_PENDENCIA"] >= 2]
 
         if df_pendentes.empty:
@@ -329,7 +334,8 @@ else:
 
             st.caption(
                 "Clientes cuja **última ação é pendência** e que estão há "
-                "**2 dias ou mais** sem movimentação. Priorizem a cobrança nesses casos."
+                "**2 dias ou mais** sem movimentação (contando a partir de hoje). "
+                "Priorizem a cobrança nesses casos."
             )
 
 # ---------------------------------------------------------

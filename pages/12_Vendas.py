@@ -221,7 +221,7 @@ meta_vendas = st.sidebar.slider(
 )
 
 # ---------------------------------------------------------
-# APLICA FILTROS NO DATAFRAME
+# APLICA FILTROS NO DATAFRAME (PLANILHA)
 # ---------------------------------------------------------
 mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
 df_periodo = df[mask_mov].copy()
@@ -256,7 +256,10 @@ qtd_aprovacoes = conta_aprovacoes(df_periodo["STATUS_BASE"])
 taxa_venda_aprov = (qtd_vendas / qtd_aprovacoes * 100) if qtd_aprovacoes > 0 else 0.0
 
 # ---------------------------------------------------------
-# LEADS DO CRM NO PERÍODO (AGORA FILTRANDO POR EQUIPE/CORRETOR)
+# LEADS DO CRM NO PERÍODO
+#  - Filtra por período
+#  - ENRIQUECE COM EQUIPE DA PLANILHA PELO CORRETOR
+#  - Filtra por equipe_sel e corretor_sel usando esse cruzamento
 # ---------------------------------------------------------
 total_leads_periodo = None
 leads_por_venda = None
@@ -280,6 +283,49 @@ if not df_leads.empty:
     if base_date_col is not None:
         df_leads_use = df_leads_use.dropna(subset=[base_date_col]).copy()
 
+        # 🔹 Mapa CORRETOR x EQUIPE a partir da planilha
+        mapa_equipes = (
+            df[["CORRETOR", "EQUIPE"]]
+            .dropna()
+            .drop_duplicates()
+        )
+
+        # 🔹 Merge dos leads com a planilha pelo nome do corretor
+        # nome_corretor_norm (leads) <-> CORRETOR (planilha)
+        if "nome_corretor_norm" in df_leads_use.columns:
+            df_leads_use = df_leads_use.merge(
+                mapa_equipes,
+                left_on="nome_corretor_norm",
+                right_on="CORRETOR",
+                how="left",
+                suffixes=("", "_PLAN"),
+            )
+        else:
+            # se não tiver nome_corretor_norm, cria tudo como NÃO INFORMADO
+            df_leads_use["CORRETOR"] = "NÃO INFORMADO"
+            df_leads_use["EQUIPE"] = "NÃO INFORMADO"
+
+        # 🔹 Coluna final de equipe do lead (prioriza API, depois planilha)
+        df_leads_use["EQUIPE_LEAD_FINAL"] = "NÃO INFORMADO"
+
+        if "equipe_lead_norm" in df_leads_use.columns:
+            mask_api = df_leads_use["equipe_lead_norm"].notna() & (
+                df_leads_use["equipe_lead_norm"] != "NÃO INFORMADO"
+            )
+            df_leads_use.loc[mask_api, "EQUIPE_LEAD_FINAL"] = df_leads_use.loc[
+                mask_api, "equipe_lead_norm"
+            ]
+
+        if "EQUIPE" in df_leads_use.columns:
+            mask_plan = (
+                df_leads_use["EQUIPE"].notna()
+                & (df_leads_use["EQUIPE"] != "")
+                & (df_leads_use["EQUIPE_LEAD_FINAL"] == "NÃO INFORMADO")
+            )
+            df_leads_use.loc[mask_plan, "EQUIPE_LEAD_FINAL"] = df_leads_use.loc[
+                mask_plan, "EQUIPE"
+            ]
+
         # Filtro por período
         mask_leads_periodo = (
             (df_leads_use[base_date_col] >= data_ini_mov)
@@ -287,14 +333,17 @@ if not df_leads.empty:
         )
         df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
 
-        # Filtro por equipe (se existir essa coluna)
-        if equipe_sel != "Todas" and "equipe_lead_norm" in df_leads_periodo.columns:
+        # 🔹 Filtro por equipe (usando EQUIPE_LEAD_FINAL já cruzada)
+        if equipe_sel != "Todas":
             df_leads_periodo = df_leads_periodo[
-                df_leads_periodo["equipe_lead_norm"] == equipe_sel
+                df_leads_periodo["EQUIPE_LEAD_FINAL"] == equipe_sel
             ]
 
-        # Filtro por corretor (se existir essa coluna)
-        if corretor_sel != "Todos" and "nome_corretor_norm" in df_leads_periodo.columns:
+        # 🔹 Filtro por corretor (nome_corretor_norm)
+        if (
+            corretor_sel != "Todos"
+            and "nome_corretor_norm" in df_leads_periodo.columns
+        ):
             df_leads_periodo = df_leads_periodo[
                 df_leads_periodo["nome_corretor_norm"] == corretor_sel
             ]
@@ -327,9 +376,15 @@ with c6:
 
 c7, c8 = st.columns(2)
 with c7:
-    st.metric("Leads (CRM) no período", "-" if total_leads_periodo is None else total_leads_periodo)
+    st.metric(
+        "Leads (CRM) no período",
+        "-" if total_leads_periodo is None else total_leads_periodo,
+    )
 with c8:
-    st.metric("Leads por venda (CRM)", "-" if leads_por_venda is None else f"{leads_por_venda:.1f}")
+    st.metric(
+        "Leads por venda (CRM)",
+        "-" if leads_por_venda is None else f"{leads_por_venda:.1f}",
+    )
 
 # ---------------------------------------------------------
 # EVOLUÇÃO DIÁRIA – VGV E LINHA DE META

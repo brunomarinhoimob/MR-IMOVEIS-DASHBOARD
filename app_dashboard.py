@@ -159,7 +159,7 @@ if df.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# LEADS – API SUPREMO (AGORA COM CACHE 1 HORA E COLUNAS NORMALIZADAS)
+# LEADS – API SUPREMO (CACHE 1 HORA E COLUNAS NORMALIZADAS)
 # ---------------------------------------------------------
 BASE_URL_LEADS = "https://api.supremocrm.com.br/v1/leads"
 
@@ -260,13 +260,6 @@ def carregar_leads_direto(limit: int = 1000, max_pages: int = 100) -> pd.DataFra
 
     return df_all.head(limit)
 
-
-df_leads = carregar_leads_direto()
-
-# Mantém em sessão para reuso interno (se precisar em outra parte do app)
-if "df_leads" not in st.session_state:
-    st.session_state["df_leads"] = df_leads
-
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS
 # ---------------------------------------------------------
@@ -297,6 +290,26 @@ else:
 
 lista_corretor = sorted(base_cor["CORRETOR"].unique())
 corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
+
+# ---------------------------------------------------------
+# BOTÃO PARA ATUALIZAR LEADS DO CRM MANUALMENTE
+# ---------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.write("🔄 Atualização de Leads (CRM)")
+
+btn_atualizar_leads = st.sidebar.button("Atualizar Leads do CRM agora")
+
+# Se clicar, limpa o cache e o df_leads salvo na sessão.
+if btn_atualizar_leads:
+    st.cache_data.clear()
+    st.session_state.pop("df_leads", None)
+
+# Carrega os leads (já respeitando cache ou renovando se o botão foi clicado)
+df_leads = carregar_leads_direto()
+
+# Mantém em sessão para uso nas outras páginas (Vendas, Funis, etc.)
+if "df_leads" not in st.session_state:
+    st.session_state["df_leads"] = df_leads
 
 # ---------------------------------------------------------
 # FILTRO PRINCIPAL NA PLANILHA

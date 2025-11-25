@@ -28,11 +28,12 @@ if df_global.empty:
 # Garante DIA como datetime
 df_global["DIA"] = pd.to_datetime(df_global["DIA"], errors="coerce")
 
-# Lista de equipes
+# Verifica coluna de equipe
 if "EQUIPE" not in df_global.columns:
     st.error("Coluna 'EQUIPE' não encontrada na base.")
     st.stop()
 
+# Lista de equipes
 lista_equipes = sorted(df_global["EQUIPE"].dropna().astype(str).unique())
 if not lista_equipes:
     st.error("Nenhuma equipe encontrada na base.")
@@ -93,7 +94,7 @@ def conta_aprovacoes(status: pd.Series) -> int:
 
 def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
     """
-    Uma venda por cliente (último status).
+    Considera no máximo 1 venda por cliente (último status de venda).
     """
     if df_scope.empty:
         return df_scope.copy()
@@ -103,6 +104,7 @@ def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
     if df_v.empty:
         return df_v
 
+    # Nome / CPF base
     if "NOME_CLIENTE_BASE" not in df_v.columns:
         if "CLIENTE" in df_v.columns:
             df_v["NOME_CLIENTE_BASE"] = (
@@ -177,7 +179,7 @@ else:
     data_min_mov = dias_validos.min().date()
     data_max_mov = dias_validos.max().date()
 
-# permitir datas futuras (até 1 ano)
+# permitir datas futuras (até 1 ano pra frente)
 max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
 
@@ -235,36 +237,71 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
 
-# --------- LEADS DO PERÍODO (CRM – OBRIGATORIAMENTE DA EQUIPE) ---------
+
+# ---------------------------------------------------------
+# LEADS DO PERÍODO (CRM) – CRUZANDO COM A PLANILHA PRA ACHAR A EQUIPE
+# ---------------------------------------------------------
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 total_leads_periodo = None
 conv_leads_analise_pct = None
 leads_por_analise = None
+leads_msg = None
 
 if not df_leads.empty and "data_captura" in df_leads.columns:
-    df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
+    df_leads_use = df_leads.copy()
     df_leads_use["data_captura"] = pd.to_datetime(
         df_leads_use["data_captura"], errors="coerce"
     )
+    df_leads_use = df_leads_use.dropna(subset=["data_captura"])
     df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
 
-    # PROCURAR UMA COLUNA DE EQUIPE NO CRM
-    equipe_col = None
+    # tenta achar uma coluna de corretor no df_leads
     cols_lower = {c.lower(): c for c in df_leads_use.columns}
-    for nome in ["equipe", "nome_equipe", "time", "equipe_nome"]:
-        if nome in cols_lower:
-            equipe_col = cols_lower[nome]
-            break
+    possiveis_corretor_lead = [
+        "corretor",
+        "nome_corretor",
+        "corretor_nome",
+        "responsavel",
+        "nome_responsavel",
+        "atendente",
+    ]
+    col_corretor_lead = next(
+        (cols_lower[n] for n in possiveis_corretor_lead if n in cols_lower), None
+    )
 
-    if equipe_col is not None:
-        mask_periodo_leads = (
-            (df_leads_use["data_captura_date"] >= data_ini_mov)
-            & (df_leads_use["data_captura_date"] <= data_fim_mov)
+    if col_corretor_lead is not None:
+        # mapa corretor -> equipe vindo da planilha
+        mapa_cor = (
+            df_global[["CORRETOR", "EQUIPE"]]
+            .dropna()
+            .astype(str)
+            .drop_duplicates()
         )
-        mask_equipe_leads = df_leads_use[equipe_col].astype(str) == str(equipe_sel)
-        df_leads_periodo = df_leads_use[mask_periodo_leads & mask_equipe_leads].copy()
+        mapa_cor["CORRETOR_KEY"] = mapa_cor["CORRETOR"].str.upper().str.strip()
 
+        df_leads_use["CORRETOR_KEY"] = (
+            df_leads_use[col_corretor_lead]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+        df_leads_merge = df_leads_use.merge(
+            mapa_cor[["CORRETOR_KEY", "EQUIPE"]],
+            on="CORRETOR_KEY",
+            how="left",
+        )
+
+        # filtra período + equipe
+        mask_periodo_leads = (
+            (df_leads_merge["data_captura_date"] >= data_ini_mov)
+            & (df_leads_merge["data_captura_date"] <= data_fim_mov)
+        )
+        mask_equipe_leads = df_leads_merge["EQUIPE"] == equipe_sel
+
+        df_leads_periodo = df_leads_merge[mask_periodo_leads & mask_equipe_leads].copy()
         total_leads_periodo = len(df_leads_periodo)
 
         if total_leads_periodo > 0:
@@ -275,16 +312,27 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
                 total_leads_periodo / analises_em if analises_em > 0 else None
             )
     else:
-        st.info(
-            "Os leads ainda não estão marcados por equipe no CRM (coluna de equipe "
-            "não encontrada no df_leads). Por isso, os indicadores de leads da equipe "
-            "não foram calculados para evitar misturar com a imobiliária toda."
+        leads_msg = (
+            "Não encontrei nenhuma coluna de corretor nos dados de leads do CRM. "
+            "Sem saber o corretor responsável pelo lead, não dá pra cruzar com a planilha "
+            "pra descobrir a equipe."
         )
+else:
+    if df_leads.empty:
+        leads_msg = "Os dados de leads do CRM ainda não foram carregados (df_leads vazio)."
+    else:
+        leads_msg = "A coluna 'data_captura' não foi encontrada no df_leads (CRM)."
 
-# -------------------------------------------------------------------
+if leads_msg:
+    st.info(leads_msg)
+
+
+# ---------------------------------------------------------
+# BLOCO PRINCIPAL – FUNIL DA EQUIPE NO PERÍODO
+# ---------------------------------------------------------
 st.markdown("## 🧭 Funil da Equipe – Período Selecionado")
 
-# Linha de métricas de LEADS x ANÁLISE
+# linha de métricas de LEADS x ANÁLISE
 lc1, lc2, lc3 = st.columns(3)
 with lc1:
     st.metric(
@@ -310,7 +358,7 @@ with lc3:
     else:
         st.metric("Relação leads/análise (só EM)", "—")
 
-# Métricas clássicas do funil da equipe
+# métricas do funil
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Análises (só EM)", analises_em)
@@ -501,7 +549,7 @@ else:
             )
 
         # -------------------------------------------------
-        # GRÁFICO DE LINHAS – META x REAL (EQUIPE)
+        # GRÁFICO – META x REAL (EQUIPE)
         # -------------------------------------------------
         if meta_vendas > 0 and vendas_3m > 0 and not df_periodo.empty:
             st.markdown("### 📊 Acompanhamento da meta da equipe no período selecionado")
@@ -511,7 +559,7 @@ else:
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # eixo de dias: de data_ini_mov até data_fim_mov (inclui datas futuras)
+            # eixo de dias: de data_ini_mov até data_fim_mov (inclui data futura)
             dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
             dias_periodo = [d.date() for d in dr]
 
@@ -566,7 +614,7 @@ else:
                     mask_future = df_line.index.date > limite_real
                     df_line.loc[mask_future, "Real"] = np.nan
 
-                    # linha Meta até o fim do período
+                    # linha Meta vai até a data final escolhida
                     df_line["Meta"] = np.linspace(
                         0, total_meta, num=len(df_line), endpoint=True
                     )
@@ -592,8 +640,10 @@ else:
                         .properties(height=320)
                     )
 
-                    # ponto marcando o dia de hoje (se estiver no período)
-                    hoje_dentro = (hoje_date >= data_ini_mov) and (hoje_date <= data_fim_mov)
+                    # marca o ponto do dia de hoje, se estiver dentro do período
+                    hoje_dentro = (hoje_date >= data_ini_mov) and (
+                        hoje_date <= data_fim_mov
+                    )
                     if hoje_dentro:
                         df_real_reset = df_line.reset_index()
                         df_real_hoje = df_real_reset[

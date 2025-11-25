@@ -255,7 +255,7 @@ with st.spinner("Carregando bases (planilha + CRM + leads)..."):
     except Exception:
         df_corretores_crm = pd.DataFrame()
 
-    # Mesma lógica dos funis: reaproveita df_leads já carregado no app
+    # df_leads já carregado no app principal (com colunas normalizadas)
     df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 # ---------------------------------------------------------
@@ -297,30 +297,49 @@ df_planilha["STATUS_BASE_NORM"] = (
 )
 
 # ---------------------------------------------------------
-# AJUSTAR LEADS (CAPTURA DIRETO SUPREMO)
+# AJUSTAR LEADS (USANDO MESMA LÓGICA DO FUNIL IMOBILIÁRIA)
 # ---------------------------------------------------------
 if not df_leads.empty:
-    if "data_captura" in df_leads.columns:
-        df_leads["data_captura"] = pd.to_datetime(
-            df_leads["data_captura"], errors="coerce"
-        )
-        df_leads["DATA_CAPTURA_DATE"] = df_leads["data_captura"].dt.date
-    else:
-        df_leads["DATA_CAPTURA_DATE"] = pd.NaT
+    # Garante que temos data_captura_date
+    if "data_captura_date" not in df_leads.columns:
+        if "data_captura" in df_leads.columns:
+            df_leads["data_captura"] = pd.to_datetime(
+                df_leads["data_captura"], errors="coerce"
+            )
+            df_leads["data_captura_date"] = df_leads["data_captura"].dt.date
+        else:
+            df_leads["data_captura_date"] = pd.NaT
 
-    if "nome_corretor" in df_leads.columns:
-        df_leads["NOME_CORRETOR_LEAD"] = (
-            df_leads["nome_corretor"]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df_leads["NOME_CORRETOR_LEAD"] = "NÃO INFORMADO"
+    # Garante nome do corretor normalizado
+    if "nome_corretor_norm" not in df_leads.columns:
+        if "nome_corretor" in df_leads.columns:
+            df_leads["nome_corretor_norm"] = (
+                df_leads["nome_corretor"]
+                .fillna("NÃO INFORMADO")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+            )
+        else:
+            df_leads["nome_corretor_norm"] = "NÃO INFORMADO"
+
+    # Garante equipe normalizada
+    if "equipe_lead_norm" not in df_leads.columns:
+        possiveis_equipes = ["equipe", "nome_equipe", "equipe_nome", "nome_equipe_lead"]
+        col_equipe = next((c for c in possiveis_equipes if c in df_leads.columns), None)
+        if col_equipe:
+            df_leads["equipe_lead_norm"] = (
+                df_leads[col_equipe]
+                .fillna("NÃO INFORMADO")
+                .astype(str)
+                .str.upper()
+                .str.strip()
+            )
+        else:
+            df_leads["equipe_lead_norm"] = "NÃO INFORMADO"
 else:
     df_leads = pd.DataFrame(
-        columns=["DATA_CAPTURA_DATE", "NOME_CORRETOR_LEAD"]
+        columns=["data_captura_date", "nome_corretor_norm", "equipe_lead_norm"]
     )
 
 # ---------------------------------------------------------
@@ -427,7 +446,7 @@ with col_header_left:
             <p class="top-banner-subtitle">
                 Período: <strong>{data_ini.strftime('%d/%m/%Y')}</strong> até
                 <strong>{data_fim.strftime('%d/%m/%Y')}</strong> • 
-                Força de vendas integrada CRM + Planilha.
+                Força de vendas integrada CRM + Planilha + Leads.
             </p>
         </div>
         """,
@@ -522,13 +541,28 @@ corretores_ativos_periodo = (
     .nunique()
 )
 
-# Leads capturados por corretor no período
+# Leads capturados filtrados por período + equipe + corretor (igual funil)
 if not df_leads.empty:
+    df_leads_use = df_leads.dropna(subset=["data_captura_date"]).copy()
+
     mask_leads_periodo = (
-        (df_leads["DATA_CAPTURA_DATE"] >= data_ini)
-        & (df_leads["DATA_CAPTURA_DATE"] <= data_fim)
+        (df_leads_use["data_captura_date"] >= data_ini)
+        & (df_leads_use["data_captura_date"] <= data_fim)
     )
-    df_leads_periodo = df_leads.loc[mask_leads_periodo].copy()
+    df_leads_periodo = df_leads_use.loc[mask_leads_periodo].copy()
+
+    if equipe_selecionada != "TODAS" and "equipe_lead_norm" in df_leads_periodo.columns:
+        df_leads_periodo = df_leads_periodo[
+            df_leads_periodo["equipe_lead_norm"] == equipe_selecionada
+        ]
+
+    if (
+        corretor_selecionado != "TODOS"
+        and "nome_corretor_norm" in df_leads_periodo.columns
+    ):
+        df_leads_periodo = df_leads_periodo[
+            df_leads_periodo["nome_corretor_norm"] == corretor_selecionado
+        ]
 else:
     df_leads_periodo = pd.DataFrame(columns=df_leads.columns)
 
@@ -543,8 +577,14 @@ col_m1, col_m2, col_m3, col_m4 = st.columns(4)
 
 with col_m1:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Corretores ativos no CRM</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="metric-value">{qtde_corretores_crm_ativos}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="metric-label">Corretores ativos no CRM</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="metric-value">{qtde_corretores_crm_ativos}</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="metric-help">Profissionais ativos cadastrados no Supremo.</div>',
         unsafe_allow_html=True,
@@ -553,8 +593,14 @@ with col_m1:
 
 with col_m2:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Corretores com movimento no período</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="metric-value">{corretores_ativos_periodo}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="metric-label">Corretores com movimento no período</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="metric-value">{corretores_ativos_periodo}</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="metric-help">Pelo menos uma movimentação na base.</div>',
         unsafe_allow_html=True,
@@ -563,22 +609,31 @@ with col_m2:
 
 with col_m3:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Leads capturados no período</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="metric-value">{total_leads_periodo}</div>', unsafe_allow_html=True)
-    st.markmarkdown(
-        '<div class="metric-help">Leads que entraram via API do Supremo.</div>',
+    st.markdown(
+        '<div class="metric-label">Leads no período (filtros)</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="metric-value">{total_leads_periodo}</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="metric-help">Leads do período considerando equipe/corretor.</div>',
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
 with col_m4:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label">Análises / Aprovações / Vendas</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="metric-label">Análises / Aprovações / Vendas</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         f'<div class="metric-value">{total_analises} / {total_aprov} / {total_vendas}</div>',
         unsafe_allow_html=True,
     )
-    st.markmarkdown(
+    st.markdown(
         '<div class="metric-help">Volume do período (planilha).</div>',
         unsafe_allow_html=True,
     )
@@ -588,7 +643,9 @@ with col_m4:
 # PAINEL DE CORRETORES (CRM + PLANILHA + LEADS)
 # ---------------------------------------------------------
 st.markdown("### 📊 Painel de Corretores")
-st.caption("Uma linha por corretor: CRM, equipe, leads, análises, aprovações, vendas, VGV e dias sem movimento.")
+st.caption(
+    "Uma linha por corretor: CRM, equipe, leads, análises, aprovações, vendas, VGV e dias sem movimento."
+)
 
 agrup_cols = ["CORRETOR_NORM", "EQUIPE_NORM"]
 
@@ -598,7 +655,10 @@ df_rank = (
         ANALISES=("IS_ANALISE", "sum"),
         APROVACOES=("IS_APROV", "sum"),
         VENDAS=("IS_VENDA", "sum"),
-        DIAS_SEM_MOV=("DIA", lambda x: (hoje - x.max()).days if len(x.dropna()) > 0 else -1),
+        DIAS_SEM_MOV=(
+            "DIA",
+            lambda x: (hoje - x.max()).days if len(x.dropna()) > 0 else -1,
+        ),
         VGV=("VGV_VENDA", "sum"),
     )
     .reset_index()
@@ -607,14 +667,16 @@ df_rank = (
 if "VGV" not in df_rank_base.columns:
     df_rank["VGV"] = 0.0
 
+# Leads por corretor (já filtrados por período/equipe/corretor)
 if not df_leads_periodo.empty:
     df_leads_corr = (
-        df_leads_periodo.groupby("NOME_CORRETOR_LEAD")
+        df_leads_periodo.groupby("nome_corretor_norm")
         .size()
         .reset_index(name="LEADS")
+        .rename(columns={"nome_corretor_norm": "CORRETOR_NORM"})
     )
 else:
-    df_leads_corr = pd.DataFrame(columns=["NOME_CORRETOR_LEAD", "LEADS"])
+    df_leads_corr = pd.DataFrame(columns=["CORRETOR_NORM", "LEADS"])
 
 df_corr = df_corretores_crm_ativos[
     ["id", "NOME_CRM_BASE", "NOME_CRM", "TELEFONE_CRM", "ANIVERSARIO_DATE"]
@@ -636,8 +698,7 @@ df_merge = pd.merge(
 df_merge = pd.merge(
     df_merge,
     df_leads_corr,
-    left_on="CORRETOR_NORM",
-    right_on="NOME_CORRETOR_LEAD",
+    on="CORRETOR_NORM",
     how="left",
 )
 
@@ -670,6 +731,7 @@ df_tabela["Telefone (CRM)"] = df_merge["TELEFONE_CRM"].fillna("")
 
 mes_atual = hoje.month
 
+
 def formatar_aniversario(d):
     if pd.isna(d):
         return "—"
@@ -680,6 +742,7 @@ def formatar_aniversario(d):
     if dt.month == mes_atual:
         return f"🎂 {dt.strftime('%d/%m')}"
     return dt.strftime("%d/%m")
+
 
 df_tabela["Aniversário"] = df_merge["ANIVERSARIO_DATE"].apply(formatar_aniversario)
 
@@ -697,7 +760,7 @@ st.dataframe(
 )
 
 # ---------------------------------------------------------
-# ALERTAS INTELIGENTES  (UMA SEÇÃO EMBAIXO DA OUTRA)
+# ALERTAS INTELIGENTES  (TABELAS EMBAIXO UMA DA OUTRA)
 # ---------------------------------------------------------
 st.markdown("### 🔔 Alertas Inteligentes")
 st.caption("Onde focar energia primeiro.")
@@ -804,7 +867,7 @@ else:
 
     st.markdown("#### 📈 Top 5 Aprovações")
     df_top_aprov = (
-        df_rank_view.sort_values("APROVACOES", descending=False)
+        df_rank_view.sort_values("APROVACOES", ascending=False)
         .head(5)[["NOME_CRM_VISUAL", "CORRETOR_NORM", "EQUIPE_NORM", "APROVACOES"]]
     )
     st.dataframe(

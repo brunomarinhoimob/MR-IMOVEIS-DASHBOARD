@@ -211,8 +211,70 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
 
+# ---------------------------------------------------------
+# LEADS DO PERÍODO (CRM SUPREMO VIA SESSION_STATE)
+# ---------------------------------------------------------
+df_leads = st.session_state.get("df_leads", pd.DataFrame())
+
+total_leads_periodo = None
+conv_leads_analise_pct = None
+leads_por_analise = None
+
+if not df_leads.empty and "data_captura" in df_leads.columns:
+    df_leads_use = df_leads.dropna(subset=["data_captura"]).copy()
+    df_leads_use["data_captura"] = pd.to_datetime(
+        df_leads_use["data_captura"], errors="coerce"
+    )
+    df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
+
+    mask_leads_periodo = (
+        (df_leads_use["data_captura_date"] >= data_ini_mov)
+        & (df_leads_use["data_captura_date"] <= data_fim_mov)
+    )
+    df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
+
+    total_leads_periodo = len(df_leads_periodo)
+
+    if total_leads_periodo > 0:
+        conv_leads_analise_pct = (
+            analises_em / total_leads_periodo * 100 if analises_em > 0 else 0.0
+        )
+        leads_por_analise = (
+            total_leads_periodo / analises_em if analises_em > 0 else None
+        )
+
+# ---------------------------------------------------------
+# BLOCO PRINCIPAL DO FUNIL
+# ---------------------------------------------------------
 st.markdown("## 🧭 Funil da Imobiliária – Período Selecionado")
 
+# Linha com métricas de LEADS x ANÁLISES
+lc1, lc2, lc3 = st.columns(3)
+with lc1:
+    st.metric(
+        "Leads (CRM – período)",
+        total_leads_periodo if total_leads_periodo is not None else "—",
+    )
+with lc2:
+    if conv_leads_analise_pct is not None:
+        st.metric(
+            "Leads → Análises (só EM)",
+            f"{conv_leads_analise_pct:.1f}%",
+            help="Percentual de leads do período que viraram análise (só EM ANÁLISE).",
+        )
+    else:
+        st.metric("Leads → Análises (só EM)", "—")
+with lc3:
+    if leads_por_analise is not None:
+        st.metric(
+            "Relação leads/análise (só EM)",
+            f"{leads_por_analise:.1f} leads/análise",
+            help="Em média, quantos leads o CRM precisa gerar para sair 1 análise (só EM ANÁLISE).",
+        )
+    else:
+        st.metric("Relação leads/análise (só EM)", "—")
+
+# Métricas já existentes do funil
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Análises (só EM)", analises_em)

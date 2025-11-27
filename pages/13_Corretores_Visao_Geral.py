@@ -477,7 +477,10 @@ if "TIPO_REGISTRO" in df_rank_base.columns:
 else:
     df_rank_base["TIPO_REGISTRO"] = ""
 
-# 🔧 VENDA – respeita a coluna da planilha se já existir
+# ---------------------------------------------------------
+# VENDA / VGV – lógica mais robusta
+# ---------------------------------------------------------
+# 1) IS_VENDA: usa a coluna se já existir, senão detecta por texto/valor
 if "IS_VENDA" in df_rank_base.columns:
     df_rank_base["IS_VENDA"] = (
         df_rank_base["IS_VENDA"]
@@ -486,17 +489,50 @@ if "IS_VENDA" in df_rank_base.columns:
         .astype(bool)
     )
 else:
-    df_rank_base["IS_VENDA"] = df_rank_base["STATUS_BASE_NORM"].str.contains(
-        "APROV", na=False
-    ) & df_rank_base["TIPO_REGISTRO"].str.contains("VENDA", na=False)
+    # status com "VEND" (VENDA, VENDIDO, etc.)
+    cond_status_venda = df_rank_base["STATUS_BASE_NORM"].str.contains(
+        "VEND", na=False
+    )
 
-# VGV
-if "VALOR_VENDA" in df_rank_base.columns:
-    df_rank_base["VGV_VENDA"] = df_rank_base["VALOR_VENDA"].fillna(0.0)
-elif "VGV_VENDA" in df_rank_base.columns:
-    df_rank_base["VGV_VENDA"] = df_rank_base["VGV_VENDA"].fillna(0.0)
-else:
-    df_rank_base["VGV_VENDA"] = 0.0
+    # tipo de registro com "VENDA"
+    cond_tipo_venda = df_rank_base["TIPO_REGISTRO"].str.contains(
+        "VENDA", na=False
+    )
+
+    # linhas com valor de venda positivo (qualquer coluna de valor típica)
+    cond_valor_venda = pd.Series(False, index=df_rank_base.index)
+    candidatos_valor = [
+        "VALOR_VENDA",
+        "VGV_VENDA",
+        "VGV",
+        "VALOR_TOTAL",
+        "VALOR_IMOVEL",
+        "VALOR_APROVADO",
+    ]
+    for c in candidatos_valor:
+        if c in df_rank_base.columns:
+            valores = pd.to_numeric(df_rank_base[c], errors="coerce").fillna(0.0)
+            cond_valor_venda = cond_valor_venda | (valores > 0)
+
+    df_rank_base["IS_VENDA"] = cond_status_venda | cond_tipo_venda | cond_valor_venda
+
+# 2) VGV_VENDA: zera e preenche só nas linhas marcadas como venda
+df_rank_base["VGV_VENDA"] = 0.0
+candidatos_vgv = [
+    "VALOR_VENDA",
+    "VGV_VENDA",
+    "VGV",
+    "VALOR_TOTAL",
+    "VALOR_IMOVEL",
+    "VALOR_APROVADO",
+]
+for c in candidatos_vgv:
+    if c in df_rank_base.columns:
+        valores = pd.to_numeric(df_rank_base[c], errors="coerce").fillna(0.0)
+        df_rank_base.loc[df_rank_base["IS_VENDA"], "VGV_VENDA"] = valores[
+            df_rank_base["IS_VENDA"]
+        ]
+        break
 
 # Indicadores
 total_analises = int(df_rank_base["IS_ANALISE"].sum())

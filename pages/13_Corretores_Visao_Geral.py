@@ -465,7 +465,7 @@ df_rank_base["IS_APROV"] = df_rank_base["STATUS_BASE_NORM"].str.contains(
     "APROV", na=False
 )
 
-# Tipo registro / venda
+# Tipo registro
 if "TIPO_REGISTRO" in df_rank_base.columns:
     df_rank_base["TIPO_REGISTRO"] = (
         df_rank_base["TIPO_REGISTRO"]
@@ -477,14 +477,20 @@ if "TIPO_REGISTRO" in df_rank_base.columns:
 else:
     df_rank_base["TIPO_REGISTRO"] = ""
 
-if "IS_VENDA" not in df_rank_base.columns:
-    df_rank_base["IS_VENDA"] = False
+# 🔧 VENDA – respeita a coluna da planilha se já existir
+if "IS_VENDA" in df_rank_base.columns:
+    df_rank_base["IS_VENDA"] = (
+        df_rank_base["IS_VENDA"]
+        .fillna(0)
+        .astype(int)
+        .astype(bool)
+    )
+else:
+    df_rank_base["IS_VENDA"] = df_rank_base["STATUS_BASE_NORM"].str.contains(
+        "APROV", na=False
+    ) & df_rank_base["TIPO_REGISTRO"].str.contains("VENDA", na=False)
 
-df_rank_base["IS_VENDA"] = df_rank_base["STATUS_BASE_NORM"].str.contains(
-    "APROV", na=False
-) & df_rank_base["TIPO_REGISTRO"].str.contains("VENDA", na=False)
-
-# 🔧 AQUI ESTÁ A CORREÇÃO DO VGV
+# VGV
 if "VALOR_VENDA" in df_rank_base.columns:
     df_rank_base["VGV_VENDA"] = df_rank_base["VALOR_VENDA"].fillna(0.0)
 elif "VGV_VENDA" in df_rank_base.columns:
@@ -574,7 +580,7 @@ with col_m2:
 
 with col_m3:
     st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown(
+    st.markmarkdown(
         '<div class="metric-title">Produção do período</div>',
         unsafe_allow_html=True,
     )
@@ -750,7 +756,7 @@ else:
     st.info("Nenhum corretor com dados para exibir no período selecionado.")
 
 # ---------------------------------------------------------
-# ALERTAS / RANKINGS (mantidos igual ao anterior)
+# ALERTAS
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("### 🚨 Alertas e Insights por Corretor")
@@ -824,14 +830,18 @@ else:
                 hide_index=True,
             )
 
+# ---------------------------------------------------------
+# RANKINGS – no máximo 2 lado a lado
+# ---------------------------------------------------------
 st.markdown("---")
 st.markdown("### 🏅 Rankings rápidos de corretores")
 
 if df_merge.empty:
     st.info("Sem dados para montar rankings.")
 else:
-    col_r1, col_r2, col_r3 = st.columns(3)
+    col_r1, col_r2 = st.columns(2)
 
+    # Top 5 – Vendas
     with col_r1:
         st.markdown("#### 🔝 Top 5 – Vendas")
         df_top_vendas = df_merge.sort_values("VENDAS", ascending=False).head(5)
@@ -847,6 +857,7 @@ else:
             hide_index=True,
         )
 
+    # Top 5 – VGV
     with col_r2:
         st.markdown("#### 💰 Top 5 – VGV")
         df_top_vgv = df_merge.sort_values("VGV", ascending=False).head(5)
@@ -861,33 +872,34 @@ else:
                 columns={
                     "NOME_CRM_VISUAL": "Corretor (CRM)",
                     "CORRETOR_NORM": "Corretor (planilha)",
+                    "VGV": "VGV",
                 }
             ),
             use_container_width=True,
             hide_index=True,
         )
 
-    with col_r3:
-        st.markdown("#### 📈 Top 5 – Conversão Análises → Venda (mín. 5 análises)")
-        df_conv = df_merge[df_merge["ANALISES"] >= 5].copy()
-        df_conv = df_conv.sort_values("CONV_ANALISE_VENDA", ascending=False).head(5)
-        df_conv_view = df_conv[
-            ["NOME_CRM_VISUAL", "CORRETOR_NORM", "CONV_ANALISE_VENDA"]
-        ].copy()
-        df_conv_view["CONV_ANALISE_VENDA"] = df_conv_view[
-            "CONV_ANALISE_VENDA"
-        ].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
+    # Top 5 – Conversão (linha abaixo, sozinho)
+    st.markdown("#### 📈 Top 5 – Conversão Análises → Venda (mín. 5 análises)")
+    df_conv = df_merge[df_merge["ANALISES"] >= 5].copy()
+    df_conv = df_conv.sort_values("CONV_ANALISE_VENDA", ascending=False).head(5)
+    df_conv_view = df_conv[
+        ["NOME_CRM_VISUAL", "CORRETOR_NORM", "CONV_ANALISE_VENDA"]
+    ].copy()
+    df_conv_view["CONV_ANALISE_VENDA"] = df_conv_view[
+        "CONV_ANALISE_VENDA"
+    ].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
 
-        st.dataframe(
-            df_conv_view.rename(
-                columns={
-                    "NOME_CRM_VISUAL": "Corretor (CRM)",
-                    "CORRETOR_NORM": "Corretor (planilha)",
-                    "CONV_ANALISE_VENDA": "% Conv. Análise → Venda",
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
+    st.dataframe(
+        df_conv_view.rename(
+            columns={
+                "NOME_CRM_VISUAL": "Corretor (CRM)",
+                "CORRETOR_NORM": "Corretor (planilha)",
+                "CONV_ANALISE_VENDA": "% Conv. Análise → Venda",
+            }
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.caption("Painel integrado MR Imóveis • Corretores – Visão Geral • CRM + Planilha + Leads")

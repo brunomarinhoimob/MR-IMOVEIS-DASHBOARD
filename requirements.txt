@@ -4,4 +4,6 @@ numpy
 altair
 requests
 streamlit-autorefresh
+fpdf2
+
 

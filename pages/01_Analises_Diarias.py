@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
+import altair as alt
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -53,7 +54,6 @@ st.markdown(
         margin-bottom: 0;
     }
 
-    /* chips mais discretos para as métricas principais */
     .metric-chips {
         display: flex;
         flex-wrap: wrap;
@@ -118,7 +118,6 @@ st.markdown(
         color: #38bdf8;
     }
 
-    /* tabelas mais limpas para TV */
     .stTable thead tr th {
         background-color: #111827 !important;
         color: #e5e7eb !important;
@@ -187,8 +186,15 @@ def carregar_dados() -> pd.DataFrame:
 
     df["STATUS_BASE"] = ""
     if col_sit:
-        s = df[col_sit].fillna("").astype(str).str.upper()
+        status_original = df[col_sit].fillna("").astype(str)
+        s = status_original.str.upper()
+
+        # EM ANÁLISE
         df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
+        # REANÁLISE (só pra registro / não entra nas contas)
+        df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
+        # APROVADO apenas quando tiver APROVAÇÃO
+        df.loc[s.str.contains(r"\bAPROVAÇÃO\b"), "STATUS_BASE"] = "APROVADO"
 
     return df
 
@@ -273,7 +279,7 @@ with col_top_left:
 with col_top_right:
     try:
         st.image("logo_mr.png", use_container_width=True)
-    except:
+    except Exception:
         pass
 
 # ---------------------------------------------------------
@@ -292,7 +298,7 @@ if total_analises == 0:
     st.stop()
 
 # ---------------------------------------------------------
-# MÉTRICAS PRINCIPAIS (VERSÃO DISCRETA PARA TV)
+# MÉTRICAS PRINCIPAIS
 # ---------------------------------------------------------
 equipes_ativas = df_em_analise["EQUIPE"].nunique()
 corretores_ativos = df_em_analise["CORRETOR"].nunique()
@@ -325,11 +331,10 @@ st.markdown(
 )
 
 # ---------------------------------------------------------
-# RANKINGS (DESTAQUE PARA EQUIPES E CORRETORES)
+# RANKINGS (EQUIPE / CORRETOR)
 # ---------------------------------------------------------
 col_eq, col_cor = st.columns(2)
 
-# EQUIPES
 with col_eq:
     st.markdown(
         """
@@ -341,14 +346,20 @@ with col_eq:
         unsafe_allow_html=True,
     )
 
-    df_equipes = df_em_analise.groupby("EQUIPE").size().reset_index(name="ANÁLISES")
-    df_equipes = df_equipes.sort_values("ANÁLISES", ascending=False).reset_index(drop=True)
+    df_equipes = (
+        df_em_analise.groupby("EQUIPE").size().reset_index(name="ANÁLISES")
+    )
+    df_equipes = (
+        df_equipes.sort_values("ANÁLISES", ascending=False)
+        .reset_index(drop=True)
+    )
     df_equipes.insert(0, "POSIÇÃO", criar_coluna_rank(len(df_equipes)))
-    df_equipes = df_equipes.rename(columns={"EQUIPE": "Equipe", "ANÁLISES": "Análises no dia"})
+    df_equipes = df_equipes.rename(
+        columns={"EQUIPE": "Equipe", "ANÁLISES": "Análises no dia"}
+    )
 
     st.table(df_equipes)
 
-# CORRETORES
 with col_cor:
     st.markdown(
         """
@@ -360,12 +371,139 @@ with col_cor:
         unsafe_allow_html=True,
     )
 
-    df_corretor = df_em_analise.groupby("CORRETOR").size().reset_index(name="ANÁLISES")
-    df_corretor = df_corretor.sort_values("ANÁLISES", ascending=False).reset_index(drop=True)
+    df_corretor = (
+        df_em_analise.groupby("CORRETOR").size().reset_index(name="ANÁLISES")
+    )
+    df_corretor = (
+        df_corretor.sort_values("ANÁLISES", ascending=False)
+        .reset_index(drop=True)
+    )
     df_corretor.insert(0, "POSIÇÃO", criar_coluna_rank(len(df_corretor)))
-    df_corretor = df_corretor.rename(columns={"CORRETOR": "Corretor", "ANÁLISES": "Análises no dia"})
+    df_corretor = df_corretor.rename(
+        columns={"CORRETOR": "Corretor", "ANÁLISES": "Análises no dia"}
+    )
 
     st.table(df_corretor)
+
+# ---------------------------------------------------------
+# ACOMPANHAMENTO DIÁRIO POR EQUIPE (MATRIZ + HEATMAP)
+# ---------------------------------------------------------
+st.markdown("---")
+st.markdown("### 📊 Acompanhamento diário por equipe")
+
+tipo_visao = st.radio(
+    "O que você quer acompanhar?",
+    ["Análises (EM ANÁLISE)", "Aprovações (APROVAÇÃO)"],
+    horizontal=True,
+)
+
+# ------------------ PERÍODO PERSONALIZADO -----------------
+st.markdown("#### Período personalizado")
+
+col_per1, col_per2 = st.columns(2)
+
+# valor padrão: últimos 30 dias considerando a base
+default_ini = max(data_min, data_max - timedelta(days=30))
+
+with col_per1:
+    data_ini = st.date_input(
+        "Data inicial:",
+        value=default_ini,
+        min_value=data_min,
+        max_value=data_max,
+        format="DD/MM/YYYY",
+    )
+
+with col_per2:
+    data_fim = st.date_input(
+        "Data final:",
+        value=data_max,
+        min_value=data_min,
+        max_value=data_max,
+        format="DD/MM/YYYY",
+    )
+
+if data_ini > data_fim:
+    st.error("❌ A data inicial não pode ser maior que a data final.")
+    st.stop()
+
+st.markdown(
+    f"Período considerado: **{data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}**."
+)
+
+# filtra o período escolhido
+df_periodo = df[(df["DIA"] >= data_ini) & (df["DIA"] <= data_fim)].copy()
+
+# ---------------------------------------------------------
+# MATRIZ E HEATMAP
+# ---------------------------------------------------------
+if tipo_visao.startswith("Análises"):
+    df_base = df_periodo[df_periodo["STATUS_BASE"] == "EM ANÁLISE"].copy()
+else:
+    df_base = df_periodo[df_periodo["STATUS_BASE"] == "APROVADO"].copy()
+
+if df_base.empty:
+    st.info("Não há registros para este tipo de visão no período selecionado.")
+else:
+    df_base = df_base.dropna(subset=["DIA"]).copy()
+    df_base["DIA"] = pd.to_datetime(df_base["DIA"]).dt.date
+
+    # Pivot: Equipe x Dia
+    tabela = (
+        df_base.groupby(["EQUIPE", "DIA"])
+        .size()
+        .unstack(fill_value=0)
+        .sort_index()
+    )
+
+    # garantir todas as datas do período como coluna
+    todas_datas = pd.date_range(data_ini, data_fim).date
+    for d in todas_datas:
+        if d not in tabela.columns:
+            tabela[d] = 0
+    tabela = tabela[todas_datas]
+
+    # total por equipe
+    tabela["Total geral"] = tabela.sum(axis=1)
+
+    # total por dia (linha final)
+    totais_dia = pd.DataFrame(tabela.sum(axis=0)).T
+    totais_dia.index = ["Total geral"]
+
+    tabela_final = pd.concat([tabela, totais_dia])
+
+    # colunas de datas no formato dd/mm
+    tabela_final.columns = [
+        c.strftime("%d/%m") if isinstance(c, (datetime, date)) else c
+        for c in tabela_final.columns
+    ]
+
+    st.markdown("#### Tabela diária (equipes x dia)")
+    st.dataframe(tabela_final, use_container_width=True)
+
+    # Heatmap
+    df_heat = (
+        df_base.groupby(["EQUIPE", "DIA"])
+        .size()
+        .reset_index(name="QTDE")
+    )
+
+    if not df_heat.empty:
+        df_heat["DIA_STR"] = pd.to_datetime(df_heat["DIA"]).dt.strftime("%d/%m")
+
+        st.markdown("#### Mapa de calor diário")
+        chart = (
+            alt.Chart(df_heat)
+            .mark_rect()
+            .encode(
+                x=alt.X("DIA_STR:N", title="Dia"),
+                y=alt.Y("EQUIPE:N", title="Equipe"),
+                color=alt.Color("QTDE:Q", title="Qtd."),
+                tooltip=["EQUIPE", "DIA_STR", "QTDE"],
+            )
+            .properties(height=260)
+        )
+        st.altair_chart(chart, use_container_width=True)
 
 # ---------------------------------------------------------
 # RODAPÉ

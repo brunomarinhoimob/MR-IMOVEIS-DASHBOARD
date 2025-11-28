@@ -6,8 +6,8 @@ from datetime import date, timedelta
 # CONFIGURAÇÃO DA PÁGINA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Clientes Aprovados – MR Imóveis",
-    page_icon="✅",
+    page_title="Clientes MR – MR Imóveis",
+    page_icon="🧾",
     layout="wide",
 )
 
@@ -24,11 +24,12 @@ with col_logo:
         st.write("MR Imóveis")
 
 with col_tit:
-    st.markdown("## Clientes Aprovados")
+    st.markdown("## Clientes MR")
     st.caption(
-        "Aqui aparecem apenas clientes cuja **situação atual** está como "
-        "**APROVAÇÃO** (ou seja, a última ação registrada na base contém exatamente esse texto), "
-        "com filtro por período, equipe, corretor, e busca por nome/CPF."
+        "Visão geral dos clientes da MR cuja **situação atual na planilha** é "
+        "**APROVAÇÃO**. A situação exibida na tela é exatamente o texto da "
+        "última ação registrada na base para cada cliente, com filtros por período, "
+        "equipe, corretor e busca por nome/CPF."
     )
 
 # ---------------------------------------------------------
@@ -242,7 +243,7 @@ if df_aprovados_atual.empty:
 # ---------------------------------------------------------
 # BARRA LATERAL – BUSCA (NOME / CPF)
 # ---------------------------------------------------------
-st.sidebar.title("Busca de clientes aprovados 🔎")
+st.sidebar.title("Busca de clientes MR 🔎")
 
 tipo_busca = st.sidebar.radio(
     "Buscar por:",
@@ -357,9 +358,9 @@ def format_currency(valor: float) -> str:
 
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Clientes aprovados (status atual)", total_aprovados)
+c1.metric("Clientes MR (status atual = APROVAÇÃO)", total_aprovados)
 c2.metric("Período (dias)", int(periodo))
-c3.metric("Equipes com aprovados", int(equipes_com_aprovados))
+c3.metric("Equipes com clientes aprovados", int(equipes_com_aprovados))
 
 k1, k2, k3 = st.columns(3)
 k1.metric("VGV total das aprovações", format_currency(vgv_total))
@@ -577,7 +578,7 @@ st.markdown("---")
 # ---------------------------------------------------------
 # TABELA MAIS CLEAN (RENOMEADA E FORMATADA)
 # ---------------------------------------------------------
-st.markdown("### 📋 Lista de clientes aprovados (status atual)")
+st.markdown("### 📋 Lista de clientes MR (status atual = APROVAÇÃO)")
 
 colunas_preferidas = [
     "NOME_CLIENTE_BASE",
@@ -622,7 +623,7 @@ st.dataframe(
 # RESUMO POR EQUIPE
 # ---------------------------------------------------------
 if "Equipe" in df_tabela.columns:
-    st.markdown("### 👥 Clientes aprovados por equipe")
+    st.markdown("### 👥 Clientes MR por equipe (status atual = APROVAÇÃO)")
 
     resumo_equipe = (
         df_tabela.groupby("Equipe")["Cliente"]

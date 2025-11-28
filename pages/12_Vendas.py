@@ -14,7 +14,6 @@ st.set_page_config(
 )
 
 st.title("💰 Painel de Vendas – MR Imóveis")
-
 st.caption(
     "Visão consolidada das vendas da imobiliária: VGV, ranking por equipe/corretor, "
     "evolução diária e mix por construtora/empreendimento."
@@ -68,19 +67,29 @@ def carregar_dados():
     col_construtora = next((c for c in possiveis_construtora if c in df.columns), None)
     col_empreend = next((c for c in possiveis_empreend if c in df.columns), None)
 
-    df["CONSTRUTORA_BASE"] = (
-        df[col_construtora].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        if col_construtora
-        else "NÃO INFORMADO"
-    )
+    if col_construtora is None:
+        df["CONSTRUTORA_BASE"] = "NÃO INFORMADO"
+    else:
+        df["CONSTRUTORA_BASE"] = (
+            df[col_construtora]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
-    df["EMPREENDIMENTO_BASE"] = (
-        df[col_empreend].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        if col_empreend
-        else "NÃO INFORMADO"
-    )
+    if col_empreend is None:
+        df["EMPREENDIMENTO_BASE"] = "NÃO INFORMADO"
+    else:
+        df["EMPREENDIMENTO_BASE"] = (
+            df[col_empreend]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
-    # SITUAÇÃO BASE
+    # STATUS / SITUAÇÃO
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -92,19 +101,18 @@ def carregar_dados():
 
     df["STATUS_BASE"] = ""
     if col_situacao:
-        status = df[col_situacao].fillna("").astype(str).str.upper()
-        df.loc[status.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[status.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[status.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
-        df.loc[status.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[status.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[status.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+        status_original = df[col_situacao].fillna("").astype(str)
+        s = status_original.str.upper()
 
-    # VGV (OBSERVAÇÕES)
-    if "OBSERVAÇÕES" in df.columns:
-        df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0.0)
-    else:
-        df["VGV"] = 0.0
+        df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
+        df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
+
+        # Venda gerada / informada
+        df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
+        df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+
+        # Aprovado somente quando tiver APROVAÇÃO
+        df.loc[s.str.contains(r"\bAPROVAÇÃO\b"), "STATUS_BASE"] = "APROVADO"
 
     # NOME / CPF
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
@@ -113,34 +121,50 @@ def carregar_dados():
     col_nome = next((c for c in possiveis_nome if c in df.columns), None)
     col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
-    df["NOME_CLIENTE_BASE"] = (
-        df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        if col_nome
-        else "NÃO INFORMADO"
-    )
-    df["CPF_CLIENTE_BASE"] = (
-        df[col_cpf].fillna("").astype(str).str.replace(r"\D", "", regex=True)
-        if col_cpf
-        else ""
-    )
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+
+    # VGV – se tiver VGV em OBSERVAÇÕES OU COLUNA ESPECÍFICA
+    if "VGV" in df.columns:
+        df["VGV"] = pd.to_numeric(df["VGV"], errors="coerce").fillna(0.0)
+    else:
+        df["VGV"] = 0.0
 
     return df
 
 
-df = carregar_dados()
-if df.empty:
-    st.error("Não foi possível carregar dados da planilha.")
-    st.stop()
-
-# Agora DIA vira datetime (igual Funil Imobiliária)
-df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
-
-# Leads do Supremo se tiver no session_state
-df_leads = st.session_state.get("df_leads", pd.DataFrame())
+def format_currency(valor: float) -> str:
+    return (
+        f"R$ {valor:,.2f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
 
 
-def conta_aprovacoes(s):
-    return (s.fillna("").astype(str).str.upper() == "APROVADO").sum()
+def conta_aprovacoes(status_serie: pd.Series) -> int:
+    if status_serie is None or status_serie.empty:
+        return 0
+    s = status_serie.fillna("").astype(str).str.upper()
+    return s.str.contains(r"\bAPROVADO\b").sum()
 
 
 def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
@@ -154,7 +178,10 @@ def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
         return df_v
 
     df_v["CHAVE_CLIENTE"] = (
-        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
+        df_v["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
         + " | "
         + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
@@ -164,59 +191,82 @@ def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
     return df_ult
 
 
-def format_currency(valor: float) -> str:
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
 # ---------------------------------------------------------
-# DEFINIÇÃO DO PERÍODO (MESMA LÓGICA DO FUNIL)
+# CARREGA BASE
 # ---------------------------------------------------------
-hoje = date.today()
+df = carregar_dados()
+
+if df.empty:
+    st.error("Não foi possível carregar dados da planilha de vendas.")
+    st.stop()
+
+# Garante DIA como datetime para filtros
+df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
+
 dias_validos = df["DIA"].dropna()
-
 if dias_validos.empty:
-    data_min_mov = hoje - timedelta(days=30)
-    data_max_mov = hoje
-else:
-    data_min_mov = dias_validos.min().date()
-    data_max_mov = dias_validos.max().date()
+    st.error("Não existem datas válidas na base.")
+    st.stop()
 
-# pode escolher data futura até +365 dias
-max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
+data_min = dias_validos.min().date()
+data_max = dias_validos.max().date()
 
-st.sidebar.title("Filtros 🔎")
+# ---------------------------------------------------------
+# SIDEBAR – FILTROS GERAIS
+# ---------------------------------------------------------
+st.sidebar.header("Filtros")
 
-data_ini_default_mov = max(data_min_mov, data_max_mov - timedelta(days=30))
-periodo_mov = st.sidebar.date_input(
-    "Período das vendas (data de movimentação)",
-    value=(data_ini_default_mov, data_max_mov),
-    min_value=data_min_mov,
-    max_value=max_futuro,
-)
-
-if isinstance(periodo_mov, tuple) and len(periodo_mov) == 2:
-    data_ini_mov, data_fim_mov = periodo_mov
-else:
-    data_ini_mov = periodo_mov
-    data_fim_mov = periodo_mov
+col_per1, col_per2 = st.sidebar.columns(2)
+with col_per1:
+    data_ini_mov = st.date_input(
+        "Data inicial (movimentação)",
+        value=data_max - timedelta(days=30),
+        min_value=data_min,
+        max_value=data_max,
+        format="DD/MM/YYYY",
+    )
+with col_per2:
+    data_fim_mov = st.date_input(
+        "Data final (movimentação)",
+        value=data_max,
+        min_value=data_min,
+        max_value=data_max,
+        format="DD/MM/YYYY",
+    )
 
 if data_ini_mov > data_fim_mov:
-    data_ini_mov, data_fim_mov = data_fim_mov, data_ini_mov
+    st.sidebar.error("Data inicial não pode ser maior que a data final.")
+    st.stop()
 
-# Filtro de equipe / corretor
-lista_equipes = sorted(df["EQUIPE"].dropna().unique())
-equipe_sel = st.sidebar.selectbox("Equipe", ["Todas"] + lista_equipes)
+# Filtro por equipe / corretor
+lista_equipe = (
+    df["EQUIPE"].dropna().astype(str).sort_values().unique().tolist()
+    if "EQUIPE" in df.columns
+    else []
+)
+lista_corretor = (
+    df["CORRETOR"].dropna().astype(str).sort_values().unique().tolist()
+    if "CORRETOR" in df.columns
+    else []
+)
 
-base_corretor = df if equipe_sel == "Todas" else df[df["EQUIPE"] == equipe_sel]
-lista_corretor = sorted(base_corretor["CORRETOR"].dropna().unique())
-corretor_sel = st.sidebar.selectbox("Corretor", ["Todos"] + lista_corretor)
+equipe_sel = st.sidebar.selectbox(
+    "Equipe",
+    options=["Todas"] + lista_equipe,
+    index=0,
+)
 
-# Meta de vendas (qtde) – slider
+corretor_sel = st.sidebar.selectbox(
+    "Corretor",
+    options=["Todos"] + lista_corretor,
+)
+
+# Meta de vendas (qtde) – slider (agora iniciando em 30)
 meta_vendas = st.sidebar.slider(
     "Meta de vendas (qtde) para o período",
     min_value=0,
     max_value=100,
-    value=10,
+    value=30,
     step=1,
 )
 
@@ -241,11 +291,11 @@ st.caption(
 )
 
 if df_periodo.empty:
-    st.warning("Nenhum registro encontrado para o período selecionado.")
+    st.info("Não há movimentações para o período/equipe/corretor selecionados.")
     st.stop()
 
 # ---------------------------------------------------------
-# VENDAS ÚNICAS E KPIs
+# AGREGAÇÃO PRINCIPAL – VENDAS E KPIs
 # ---------------------------------------------------------
 df_vendas = obter_vendas_unicas(df_periodo)
 qtd_vendas = len(df_vendas)
@@ -256,104 +306,57 @@ qtd_aprovacoes = conta_aprovacoes(df_periodo["STATUS_BASE"])
 taxa_venda_aprov = (qtd_vendas / qtd_aprovacoes * 100) if qtd_aprovacoes > 0 else 0.0
 
 # ---------------------------------------------------------
-# LEADS DO CRM NO PERÍODO
-#  - Filtra por período
-#  - ENRIQUECE COM EQUIPE DA PLANILHA PELO CORRETOR
-#  - Filtra por equipe_sel e corretor_sel usando esse cruzamento
+# LEADS DO CRM NO PERÍODO (se tiver df_leads no session_state)
 # ---------------------------------------------------------
+df_leads = st.session_state.get("df_leads", pd.DataFrame())
 total_leads_periodo = None
 leads_por_venda = None
 
-if not df_leads.empty:
-
-    df_leads_use = df_leads.copy()
-
-    # Garante coluna de data
-    if "data_captura_date" in df_leads_use.columns:
-        base_date_col = "data_captura_date"
-    elif "data_captura" in df_leads_use.columns:
-        df_leads_use["data_captura"] = pd.to_datetime(
-            df_leads_use["data_captura"], errors="coerce"
+if df_leads is not None and not df_leads.empty:
+    # normaliza data do lead
+    if "data_cadastro" in df_leads.columns:
+        df_leads["DATA_LEAD"] = pd.to_datetime(
+            df_leads["data_cadastro"], errors="coerce"
+        ).dt.date
+        mask_leads = (df_leads["DATA_LEAD"] >= data_ini_mov) & (
+            df_leads["DATA_LEAD"] <= data_fim_mov
         )
-        df_leads_use["data_captura_date"] = df_leads_use["data_captura"].dt.date
-        base_date_col = "data_captura_date"
-    else:
-        base_date_col = None
-
-    if base_date_col is not None:
-        df_leads_use = df_leads_use.dropna(subset=[base_date_col]).copy()
-
-        # 🔹 Mapa CORRETOR x EQUIPE a partir da planilha
-        mapa_equipes = (
-            df[["CORRETOR", "EQUIPE"]]
-            .dropna()
-            .drop_duplicates()
-        )
-
-        # 🔹 Merge dos leads com a planilha pelo nome do corretor
-        # nome_corretor_norm (leads) <-> CORRETOR (planilha)
-        if "nome_corretor_norm" in df_leads_use.columns:
-            df_leads_use = df_leads_use.merge(
-                mapa_equipes,
-                left_on="nome_corretor_norm",
-                right_on="CORRETOR",
-                how="left",
-                suffixes=("", "_PLAN"),
-            )
-        else:
-            # se não tiver nome_corretor_norm, cria tudo como NÃO INFORMADO
-            df_leads_use["CORRETOR"] = "NÃO INFORMADO"
-            df_leads_use["EQUIPE"] = "NÃO INFORMADO"
-
-        # 🔹 Coluna final de equipe do lead (prioriza API, depois planilha)
-        df_leads_use["EQUIPE_LEAD_FINAL"] = "NÃO INFORMADO"
-
-        if "equipe_lead_norm" in df_leads_use.columns:
-            mask_api = df_leads_use["equipe_lead_norm"].notna() & (
-                df_leads_use["equipe_lead_norm"] != "NÃO INFORMADO"
-            )
-            df_leads_use.loc[mask_api, "EQUIPE_LEAD_FINAL"] = df_leads_use.loc[
-                mask_api, "equipe_lead_norm"
-            ]
-
-        if "EQUIPE" in df_leads_use.columns:
-            mask_plan = (
-                df_leads_use["EQUIPE"].notna()
-                & (df_leads_use["EQUIPE"] != "")
-                & (df_leads_use["EQUIPE_LEAD_FINAL"] == "NÃO INFORMADO")
-            )
-            df_leads_use.loc[mask_plan, "EQUIPE_LEAD_FINAL"] = df_leads_use.loc[
-                mask_plan, "EQUIPE"
-            ]
-
-        # Filtro por período
-        mask_leads_periodo = (
-            (df_leads_use[base_date_col] >= data_ini_mov)
-            & (df_leads_use[base_date_col] <= data_fim_mov)
-        )
-        df_leads_periodo = df_leads_use[mask_leads_periodo].copy()
-
-        # 🔹 Filtro por equipe (usando EQUIPE_LEAD_FINAL já cruzada)
-        if equipe_sel != "Todas":
-            df_leads_periodo = df_leads_periodo[
-                df_leads_periodo["EQUIPE_LEAD_FINAL"] == equipe_sel
-            ]
-
-        # 🔹 Filtro por corretor (nome_corretor_norm)
-        if (
-            corretor_sel != "Todos"
-            and "nome_corretor_norm" in df_leads_periodo.columns
-        ):
-            df_leads_periodo = df_leads_periodo[
-                df_leads_periodo["nome_corretor_norm"] == corretor_sel
-            ]
-
+        df_leads_periodo = df_leads[mask_leads].copy()
         total_leads_periodo = len(df_leads_periodo)
-
-        if total_leads_periodo > 0 and qtd_vendas > 0:
+        if qtd_vendas > 0:
             leads_por_venda = total_leads_periodo / qtd_vendas
 
 perc_meta = (qtd_vendas / meta_vendas * 100) if meta_vendas > 0 else 0.0
+
+# ---------------------------------------------------------
+# CÁLCULOS DE VENDAS E EQUIPE PRODUTIVA
+# ---------------------------------------------------------
+# Vendas geradas / informadas (considerando vendas únicas no período)
+if df_vendas.empty:
+    vendas_geradas = 0
+    vendas_informadas = 0
+else:
+    status_vendas = df_vendas["STATUS_BASE"].fillna("").astype(str).str.upper()
+    vendas_geradas = (status_vendas == "VENDA GERADA").sum()
+    vendas_informadas = (status_vendas == "VENDA INFORMADA").sum()
+vendas_totais = vendas_geradas + vendas_informadas
+
+# Corretores ativos e produtivos no período
+if "CORRETOR" in df_periodo.columns:
+    corretores_ativos = df_periodo["CORRETOR"].nunique()
+    df_vendas_periodo = df_periodo[
+        df_periodo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
+    ]
+    corretores_com_venda = df_vendas_periodo["CORRETOR"].nunique()
+else:
+    corretores_ativos = 0
+    corretores_com_venda = 0
+
+perc_equipe_produtiva = (
+    corretores_com_venda / corretores_ativos * 100
+    if corretores_ativos > 0
+    else 0.0
+)
 
 # ---------------------------------------------------------
 # CARDS PRINCIPAIS
@@ -366,7 +369,10 @@ with c1:
 with c2:
     st.metric("VGV Total", format_currency(vgv_total))
 with c3:
-    st.metric("Ticket médio", format_currency(ticket_medio) if ticket_medio > 0 else "R$ 0,00")
+    st.metric(
+        "Ticket médio",
+        format_currency(ticket_medio) if ticket_medio > 0 else "R$ 0,00",
+    )
 with c4:
     st.metric("Meta de vendas (qtde)", meta_vendas)
 with c5:
@@ -386,8 +392,24 @@ with c8:
         "-" if leads_por_venda is None else f"{leads_por_venda:.1f}",
     )
 
-# ---------------------------------------------------------
-# EVOLUÇÃO DIÁRIA – VGV E LINHA DE META
+# Novos cards de vendas
+c9, c10, c11 = st.columns(3)
+with c9:
+    st.metric("Vendas geradas", vendas_geradas)
+with c10:
+    st.metric("Vendas informadas", vendas_informadas)
+with c11:
+    st.metric("Vendas totais (GER + INF)", vendas_totais)
+
+# Equipe produtiva
+c12, c13, c14 = st.columns(3)
+with c12:
+    st.metric("Corretores ativos no período", corretores_ativos)
+with c13:
+    st.metric("Corretores com venda", corretores_com_venda)
+with c14:
+    st.metric("Equipe produtiva (%)", f"{perc_equipe_produtiva:.1f}%")
+
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 📈 Evolução diária das vendas")
@@ -402,316 +424,154 @@ else:
     if len(dias_periodo) == 0:
         st.info("Não há datas válidas no período filtrado para montar os gráficos.")
     else:
-        idx = pd.to_datetime(dias_periodo)
-        df_line = pd.DataFrame(index=idx)
-        df_line.index.name = "DIA"
-
-        # VGV por dia (somando vendas únicas)
-        df_temp = df_vendas.copy()
-        df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"]).dt.date
-        vgv_por_dia = (
-            df_temp.groupby("DIA_DATA")["VGV"]
+        df_diario = (
+            df_vendas.groupby(df_vendas["DIA"].dt.date)["VGV"]
             .sum()
             .reindex(dias_periodo, fill_value=0.0)
+            .reset_index()
+        )
+        df_diario.columns = ["DIA", "VGV"]
+
+        df_diario["META_VGV"] = (
+            meta_vendas * ticket_medio if ticket_medio > 0 else 0.0
         )
 
-        df_line["VGV_DIA"] = vgv_por_dia.values
-        df_line["VGV_ACUM"] = df_line["VGV_DIA"].cumsum()
-
-        # gráfico de barras VGV por dia (apenas dias com VGV > 0)
-        df_barras = df_line.reset_index().copy()
-        df_barras["DIA_STR"] = df_barras["DIA"].dt.strftime("%d/%m")
-
-        st.markdown("### 💵 VGV por dia")
-        chart_vgv_dia = (
-            alt.Chart(df_barras[df_barras["VGV_DIA"] > 0])
-            .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-            .encode(
-                x=alt.X("DIA_STR:N", title="Dia"),
-                y=alt.Y("VGV_DIA:Q", title="VGV do dia (R$)"),
-                tooltip=[
-                    alt.Tooltip("DIA_STR:N", title="Dia"),
-                    alt.Tooltip("VGV_DIA:Q", title="VGV do dia", format=",.2f"),
-                ],
-            )
-            .properties(height=300)
-        )
-        st.altair_chart(chart_vgv_dia, use_container_width=True)
-
-        # --------- VGV acumulado x Meta ---------
-        st.markdown("### 📊 VGV acumulado no período")
-
-        hoje_date = date.today()
-        limite_real = min(hoje_date, data_fim_mov)
-        mask_future = df_line.index.date > limite_real
-        df_line_real = df_line.copy()
-        df_line_real.loc[mask_future, "VGV_ACUM"] = np.nan
-
-        if meta_vendas > 0 and ticket_medio > 0:
-            meta_total_vgv = meta_vendas * ticket_medio
-            df_line_real["META_ACUM"] = np.linspace(
-                0, meta_total_vgv, num=len(df_line_real), endpoint=True
-            )
-        else:
-            df_line_real["META_ACUM"] = np.nan
-
-        df_plot = df_line_real.reset_index().copy()
-        df_plot["DIA_STR"] = df_plot["DIA"].dt.strftime("%d/%m")
-
-        if df_plot["META_ACUM"].notna().any():
-            df_melt = df_plot.melt(
-                id_vars=["DIA", "DIA_STR"],
-                value_vars=["VGV_ACUM", "META_ACUM"],
-                var_name="Série",
-                value_name="VGV_VAL",
-            )
-            df_melt["Série"] = df_melt["Série"].replace(
-                {"VGV_ACUM": "Realizado", "META_ACUM": "Meta"}
-            )
-        else:
-            df_melt = df_plot[["DIA", "DIA_STR", "VGV_ACUM"]].copy()
-            df_melt = df_melt.rename(columns={"VGV_ACUM": "VGV_VAL"})
-            df_melt["Série"] = "Realizado"
-
-        chart_acum = (
-            alt.Chart(df_melt)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("DIA_STR:N", title="Dia"),
-                y=alt.Y("VGV_VAL:Q", title="VGV acumulado (R$)"),
-                color=alt.Color("Série:N", title=""),
-                tooltip=[
-                    alt.Tooltip("DIA_STR:N", title="Dia"),
-                    alt.Tooltip("Série:N", title="Série"),
-                    alt.Tooltip("VGV_VAL:Q", title="VGV acumulado", format=",.2f"),
-                ],
-            )
-            .properties(height=320)
+        base = alt.Chart(df_diario).encode(
+            x=alt.X("DIA:T", title="Dia"),
         )
 
-        # ponto do dia de hoje, se estiver no período
-        hoje_dentro = (hoje_date >= data_ini_mov) and (hoje_date <= data_fim_mov)
-        if hoje_dentro:
-            df_real_reset = df_line_real.reset_index()
-            df_real_hoje = df_real_reset[df_real_reset["DIA"].dt.date == limite_real]
-            if not df_real_hoje.empty:
-                ponto_hoje = (
-                    alt.Chart(
-                        df_real_hoje.assign(
-                            DIA_STR=df_real_hoje["DIA"].dt.strftime("%d/%m")
-                        )
-                    )
-                    .mark_point(size=80)
-                    .encode(
-                        x="DIA_STR:N",
-                        y="VGV_ACUM:Q",
-                    )
-                )
-                chart_acum = chart_acum + ponto_hoje
-
-        st.altair_chart(chart_acum, use_container_width=True)
-        st.caption(
-            "Linha **Realizado** mostra o VGV acumulado por dia e para no **dia de hoje**. "
-            "Linha **Meta** vai até a data final escolhida e mostra o ritmo de VGV necessário "
-            "para bater a meta de vendas configurada no período."
-        )
-
-# ---------------------------------------------------------
-# RANKING POR EQUIPE
-# ---------------------------------------------------------
-st.markdown("---")
-st.markdown("## 👥 Ranking de Vendas por Equipe")
-
-df_vendas_eq = df_vendas.copy()
-if df_vendas_eq.empty:
-    st.info("Não há vendas para montar o ranking de equipes neste período.")
-else:
-    rank_eq = (
-        df_vendas_eq.groupby("EQUIPE")
-        .agg(
-            VENDAS=("STATUS_BASE", "count"),
-            VGV=("VGV", "sum"),
-        )
-        .reset_index()
-    )
-    rank_eq["TICKET_MEDIO"] = np.where(
-        rank_eq["VENDAS"] > 0, rank_eq["VGV"] / rank_eq["VENDAS"], 0
-    )
-    rank_eq["%_VGV_IMOB"] = rank_eq["VGV"] / vgv_total * 100 if vgv_total > 0 else 0.0
-    rank_eq = rank_eq.sort_values(["VENDAS", "VGV"], ascending=False)
-
-    st.dataframe(
-        rank_eq.style.format(
-            {
-                "VGV": "R$ {:,.2f}".format,
-                "TICKET_MEDIO": "R$ {:,.2f}".format,
-                "%_VGV_IMOB": "{:.1f}%".format,
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.markdown("### 💰 VGV por equipe")
-    chart_eq_vgv = (
-        alt.Chart(rank_eq)
-        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-        .encode(
-            x=alt.X("VGV:Q", title="VGV (R$)"),
-            y=alt.Y("EQUIPE:N", sort="-x", title="Equipe"),
+        linha_vgv = base.mark_bar().encode(
+            y=alt.Y("VGV:Q", title="VGV do dia"),
             tooltip=[
-                "EQUIPE",
-                alt.Tooltip("VENDAS:Q", title="Vendas"),
-                alt.Tooltip("VGV:Q", title="VGV", format=",.2f"),
-                alt.Tooltip("TICKET_MEDIO:Q", title="Ticket médio", format=",.2f"),
-                alt.Tooltip("%_VGV_IMOB:Q", title="% do VGV da imob", format=".1f"),
+                alt.Tooltip("DIA:T", title="Dia"),
+                alt.Tooltip(
+                    "VGV:Q",
+                    title="VGV do dia",
+                    format=",.2f",
+                ),
             ],
         )
-        .properties(height=400)
-    )
-    st.altair_chart(chart_eq_vgv, use_container_width=True)
 
-# ---------------------------------------------------------
-# RANKING POR CORRETOR
+        linha_meta = base.mark_line(color="orange").encode(
+            y="META_VGV:Q"
+        )
+
+        st.altair_chart(
+            (linha_vgv + linha_meta).interactive(),
+            use_container_width=True,
+        )
+
 # ---------------------------------------------------------
 st.markdown("---")
-st.markdown("## 🧑‍💼 Ranking de Vendas por Corretor")
-
-df_vendas_cor = df_vendas.copy()
-if df_vendas_cor.empty:
-    st.info("Não há vendas para montar o ranking de corretores neste período.")
-else:
-    rank_cor = (
-        df_vendas_cor.groupby(["CORRETOR", "EQUIPE"])
-        .agg(
-            VENDAS=("STATUS_BASE", "count"),
-            VGV=("VGV", "sum"),
-        )
-        .reset_index()
-    )
-    rank_cor["TICKET_MEDIO"] = np.where(
-        rank_cor["VENDAS"] > 0, rank_cor["VGV"] / rank_cor["VENDAS"], 0
-    )
-    rank_cor["%_VGV_IMOB"] = rank_cor["VGV"] / vgv_total * 100 if vgv_total > 0 else 0.0
-    rank_cor = rank_cor.sort_values(["VGV", "VENDAS"], ascending=False)
-
-    st.dataframe(
-        rank_cor.style.format(
-            {
-                "VGV": "R$ {:,.2f}".format,
-                "TICKET_MEDIO": "R$ {:,.2f}".format,
-                "%_VGV_IMOB": "{:.1f}%".format,
-            }
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    rank_cor_top = rank_cor.head(10).copy()
-    rank_cor_top["CORRETOR_LABEL"] = (
-        rank_cor_top["CORRETOR"].astype(str).str[:20] + " (" + rank_cor_top["EQUIPE"] + ")"
-    )
-
-    st.markdown("### 🏆 Top 10 corretores por VGV")
-    chart_cor_vgv = (
-        alt.Chart(rank_cor_top)
-        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-        .encode(
-            x=alt.X("VGV:Q", title="VGV (R$)"),
-            y=alt.Y("CORRETOR_LABEL:N", sort="-x", title="Corretor (Equipe)"),
-            tooltip=[
-                "CORRETOR",
-                "EQUIPE",
-                alt.Tooltip("VENDAS:Q", title="Vendas"),
-                alt.Tooltip("VGV:Q", title="VGV", format=",.2f"),
-                alt.Tooltip("TICKET_MEDIO:Q", title="Ticket médio", format=",.2f"),
-                alt.Tooltip("%_VGV_IMOB:Q", title="% do VGV da imob", format=".1f"),
-            ],
-        )
-        .properties(height=400)
-    )
-    st.altair_chart(chart_cor_vgv, use_container_width=True)
-
-# ---------------------------------------------------------
-# MIX DE VENDAS
-# ---------------------------------------------------------
-st.markdown("---")
-st.markdown("## 🧱 Mix de Vendas (Construtora / Empreendimento)")
+st.markdown("## 🥇 Ranking de Vendas por Equipe e Corretor")
 
 if df_vendas.empty:
-    st.info("Sem vendas no período para mostrar o mix.")
+    st.info("Ainda não há vendas para montar o ranking.")
 else:
-    c_mix1, c_mix2 = st.columns(2)
-    with c_mix1:
-        st.markdown("### Por Construtora")
-        mix_const = (
-            df_vendas.groupby("CONSTRUTORA_BASE")
-            .agg(QTDE_VENDAS=("VGV", "size"), VGV=("VGV", "sum"))
-            .reset_index()
-            .sort_values("VGV", ascending=False)
+    # Ranking por equipe
+    df_rank_eq = (
+        df_vendas.groupby("EQUIPE")
+        .agg(
+            QTDE=("STATUS_BASE", "count"),
+            VGV=("VGV", "sum"),
         )
+        .reset_index()
+    )
+    df_rank_eq = df_rank_eq.sort_values("VGV", ascending=False)
+
+    # Ranking por corretor
+    df_rank_cor = (
+        df_vendas.groupby(["EQUIPE", "CORRETOR"])
+        .agg(
+            QTDE=("STATUS_BASE", "count"),
+            VGV=("VGV", "sum"),
+        )
+        .reset_index()
+    )
+    df_rank_cor = df_rank_cor.sort_values("VGV", ascending=False)
+
+    col_r1, col_r2 = st.columns(2)
+
+    with col_r1:
+        st.markdown("### 👥 Ranking por Equipe")
         st.dataframe(
-            mix_const.style.format({"VGV": "R$ {:,.2f}".format}),
-            use_container_width=True,
-            hide_index=True,
-        )
-    with c_mix2:
-        st.markdown("### Por Empreendimento")
-        mix_empr = (
-            df_vendas.groupby("EMPREENDIMENTO_BASE")["VGV"]
-            .sum()
-            .reset_index()
-            .sort_values("VGV", ascending=False)
-            .head(15)
-        )
-        st.dataframe(
-            mix_empr.style.format({"VGV": "R$ {:,.2f}".format}),
+            df_rank_eq.style.format({"VGV": "R$ {:,.2f}".format}),
             use_container_width=True,
             hide_index=True,
         )
 
-# ---------------------------------------------------------
-# TABELA DETALHADA
+    with col_r2:
+        st.markdown("### 🧑‍💼 Ranking por Corretor")
+        st.dataframe(
+            df_rank_cor.style.format({"VGV": "R$ {:,.2f}".format}),
+            use_container_width=True,
+            hide_index=True,
+        )
+
 # ---------------------------------------------------------
 st.markdown("---")
-st.markdown("## 📋 Detalhamento de Vendas (linha a linha)")
+st.markdown("## 🧱 Mix de Vendas por Construtora e Empreendimento")
 
-colunas_preferidas = [
-    "DIA",
-    "NOME_CLIENTE_BASE",
-    "CPF_CLIENTE_BASE",
-    "EQUIPE",
-    "CORRETOR",
-    "CONSTRUTORA_BASE",
-    "EMPREENDIMENTO_BASE",
-    "STATUS_BASE",
-    "VGV",
-]
-colunas_existentes = [c for c in colunas_preferidas if c in df_vendas.columns]
-df_tab = df_vendas[colunas_existentes].copy()
+if df_vendas.empty:
+    st.info("Ainda não há vendas para montar o mix.")
+else:
+    df_mix_constr = (
+        df_vendas.groupby("CONSTRUTORA_BASE")["VGV"].sum().reset_index()
+    )
+    df_mix_constr = df_mix_constr.sort_values("VGV", ascending=False)
 
-if "DIA" in df_tab.columns:
-    df_tab["DIA"] = pd.to_datetime(df_tab["DIA"], errors="coerce").dt.strftime("%d/%m/%Y")
+    df_mix_empre = (
+        df_vendas.groupby("EMPREENDIMENTO_BASE")["VGV"].sum().reset_index()
+    )
+    df_mix_empre = df_mix_empre.sort_values("VGV", ascending=False)
 
-df_tab = df_tab.rename(
-    columns={
-        "DIA": "Data",
-        "NOME_CLIENTE_BASE": "Cliente",
-        "CPF_CLIENTE_BASE": "CPF",
-        "EQUIPE": "Equipe",
-        "CORRETOR": "Corretor",
-        "CONSTRUTORA_BASE": "Construtora",
-        "EMPREENDIMENTO_BASE": "Empreendimento",
-        "STATUS_BASE": "Status",
-        "VGV": "VGV",
-    }
-)
+    col_m1, col_m2 = st.columns(2)
 
-if "Data" in df_tab.columns:
-    df_tab = df_tab.sort_values("Data", ascending=False)
+    with col_m1:
+        st.markdown("### 🏗️ Por Construtora")
+        st.dataframe(
+            df_mix_constr.style.format({"VGV": "R$ {:,.2f}".format}),
+            use_container_width=True,
+            hide_index=True,
+        )
 
-st.dataframe(
-    df_tab.style.format({"VGV": "R$ {:,.2f}".format}),
-    use_container_width=True,
-    hide_index=True,
-)
+    with col_m2:
+        st.markdown("### 🏢 Por Empreendimento")
+        st.dataframe(
+            df_mix_empre.style.format({"VGV": "R$ {:,.2f}".format}),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+# ---------------------------------------------------------
+st.markdown("---")
+st.markdown("## 📋 Base de vendas detalhada")
+
+df_tab = df_vendas.copy()
+
+if df_tab.empty:
+    st.info("Não há vendas para exibir.")
+else:
+    df_tab["Data"] = df_tab["DIA"].dt.strftime("%d/%m/%Y")
+
+    df_tab = df_tab.rename(
+        columns={
+            "NOME_CLIENTE_BASE": "Cliente",
+            "CPF_CLIENTE_BASE": "CPF",
+            "EQUIPE": "Equipe",
+            "CORRETOR": "Corretor",
+            "CONSTRUTORA_BASE": "Construtora",
+            "EMPREENDIMENTO_BASE": "Empreendimento",
+            "STATUS_BASE": "Status",
+            "VGV": "VGV",
+        }
+    )
+
+    if "Data" in df_tab.columns:
+        df_tab = df_tab.sort_values("Data", ascending=False)
+
+    st.dataframe(
+        df_tab.style.format({"VGV": "R$ {:,.2f}".format}),
+        use_container_width=True,
+        hide_index=True,
+    )

@@ -433,54 +433,83 @@ st.download_button(
     mime="text/csv",
 )
 
-# -------- NOVA TABELA – LEADS DO CORRETOR SELECIONADO --------
+# -------- NOVA TABELA – LEADS DO CORRETOR SELECIONADO (COM TODOS OS CONTATOS) --------
 if corretor_sel != "Todos":
     st.markdown("### 📂 Leads do corretor selecionado no período")
 
-    df_corretor = df_cor.copy()  # já está filtrado pelo corretor no df_periodo
+    df_corretor = df_cor.copy()  # já está filtrado pelo período e corretor
+
     if df_corretor.empty:
         st.info("Nenhum lead encontrado para o corretor selecionado nesse período.")
     else:
-        cols_det = [
-            "NOME_LEAD",
-            "CORRETOR_EXIBICAO",
-            "DATA_CAPTURA_DT",
-            "DATA_COM_CORRETOR_DT",
-            "SLA_INTERACOES_MIN",
-            "DATA_ULT_INTERACAO_DT",
+        # Todas as colunas que têm 'contato' no nome (além das normalizadas)
+        contact_cols_all = [
+            c for c in df_corretor.columns if "contato" in c.lower()
         ]
+
+        col_first_contact_norm = (
+            "DATA_COM_CORRETOR_DT"
+            if "DATA_COM_CORRETOR_DT" in df_corretor.columns
+            else None
+        )
+
+        cols_to_remove = set()
+        if col_first_contact_norm:
+            cols_to_remove.add(col_first_contact_norm)
+        if "DATA_ULT_INTERACAO_DT" in df_corretor.columns:
+            cols_to_remove.add("DATA_ULT_INTERACAO_DT")
+
+        extra_contact_cols = [
+            c for c in contact_cols_all if c not in cols_to_remove
+        ]
+
+        # Monta colunas da tabela detalhada
+        cols_det = ["NOME_LEAD", "CORRETOR_EXIBICAO", "DATA_CAPTURA_DT"]
+        if col_first_contact_norm:
+            cols_det.append(col_first_contact_norm)
+        cols_det += extra_contact_cols
+        cols_det.append("SLA_INTERACOES_MIN")
+        if "DATA_ULT_INTERACAO_DT" in df_corretor.columns:
+            cols_det.append("DATA_ULT_INTERACAO_DT")
+
         cols_det = [c for c in cols_det if c in df_corretor.columns]
 
         df_det = df_corretor[cols_det].copy()
 
-        if "DATA_CAPTURA_DT" in df_det.columns:
-            df_det["DATA_CAPTURA_DT"] = df_det["DATA_CAPTURA_DT"].dt.strftime(
-                "%d/%m/%Y %H:%M"
-            )
-        if "DATA_COM_CORRETOR_DT" in df_det.columns:
-            df_det["DATA_COM_CORRETOR_DT"] = df_det["DATA_COM_CORRETOR_DT"].dt.strftime(
-                "%d/%m/%Y %H:%M"
-            )
-        if "DATA_ULT_INTERACAO_DT" in df_det.columns:
-            df_det["DATA_ULT_INTERACAO_DT"] = df_det[
-                "DATA_ULT_INTERACAO_DT"
-            ].dt.strftime("%d/%m/%Y %H:%M")
+        # Formata todas as colunas de data/hora (captura, contatos e última interação)
+        for c in df_det.columns:
+            if "contato" in c.lower() or c in [
+                "DATA_CAPTURA_DT",
+                "DATA_ULT_INTERACAO_DT",
+            ]:
+                df_det[c] = pd.to_datetime(df_det[c], errors="coerce").dt.strftime(
+                    "%d/%m/%Y %H:%M"
+                )
 
+        # SLA entre contatos em formato legível
         if "SLA_INTERACOES_MIN" in df_det.columns:
             df_det["SLA_INTERACOES_MIN"] = df_det["SLA_INTERACOES_MIN"].apply(
                 format_minutes
             )
 
-        df_det = df_det.rename(
-            columns={
-                "NOME_LEAD": "Lead",
-                "CORRETOR_EXIBICAO": "Corretor",
-                "DATA_CAPTURA_DT": "Data captura",
-                "DATA_COM_CORRETOR_DT": "Data 1º contato",
-                "SLA_INTERACOES_MIN": "SLA entre contatos",
-                "DATA_ULT_INTERACAO_DT": "Data última interação",
-            }
-        )
+        # Renomeia colunas para exibição
+        rename_map = {
+            "NOME_LEAD": "Lead",
+            "CORRETOR_EXIBICAO": "Corretor",
+            "DATA_CAPTURA_DT": "Data captura",
+            "DATA_COM_CORRETOR_DT": "Data 1º contato",
+            "SLA_INTERACOES_MIN": "SLA entre contatos",
+            "DATA_ULT_INTERACAO_DT": "Data última interação",
+        }
+
+        # Colunas extras de contato recebem um nome "bonito" automaticamente
+        for c in extra_contact_cols:
+            pretty = c.replace("_", " ").strip()
+            pretty = " ".join(pretty.split())
+            pretty = pretty.capitalize()
+            rename_map[c] = pretty
+
+        df_det = df_det.rename(columns=rename_map)
 
         st.dataframe(df_det, use_container_width=True, hide_index=True)
 

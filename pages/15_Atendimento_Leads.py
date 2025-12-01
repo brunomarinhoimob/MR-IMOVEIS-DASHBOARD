@@ -271,7 +271,7 @@ mask_leads_novos = (
 )
 qtde_leads_novos = int(mask_leads_novos.sum())
 
-# SLA médio apenas dos atendidos
+# SLA médio apenas dos atendidos (captura -> primeiro contato)
 sla_medio_min = df_periodo.loc[df_periodo["ATENDIDO"], "SLA_MINUTOS"].mean()
 
 # Leads perdidos no período (já calculado acima)
@@ -359,7 +359,7 @@ if qtde_leads_novos > 0:
         st.dataframe(df_novos_tab, use_container_width=True, hide_index=True)
 
 # ---------------------------------------------------------
-# VISÃO POR CORRETOR – Resumo com ranking de SLA
+# VISÃO POR CORRETOR – Resumo sem ranking
 # ---------------------------------------------------------
 st.markdown("---")
 st.markdown("## 👥 Desempenho por corretor")
@@ -389,9 +389,9 @@ df_resumo_corretor = df_cor.groupby("CORRETOR_EXIBICAO", dropna=False).agg(
     SLA_INTERACOES_MIN=("SLA_INTERACOES_MIN", "mean"),
 ).reset_index()
 
-# Ranking de SLA (menor = melhor)
-df_resumo_corretor["RANK_SLA"] = df_resumo_corretor["SLA_MEDIO_MIN"].rank(
-    method="min", ascending=True
+# Ordena pelo SLA médio (captura -> 1º contato)
+df_resumo_corretor = df_resumo_corretor.sort_values(
+    ["SLA_MEDIO_MIN", "CORRETOR_EXIBICAO"], ascending=[True, True]
 )
 
 # DataFrame para exibição
@@ -402,31 +402,17 @@ df_display = df_resumo_corretor.copy().rename(
         "ATENDIDOS": "Leads atendidos",
         "SLA_MEDIO_MIN": "SLA inicial médio (min)",
         "SLA_INTERACOES_MIN": "SLA interações médio (min)",
-        "RANK_SLA": "Ranking SLA",
     }
-).sort_values(["Ranking SLA", "Corretor"])
-
-
-# Função para colorir SLA estourado
-def color_sla(val):
-    if pd.isna(val):
-        return ""
-    if val > SLA_ALVO_MIN:
-        return "color: #ff4d4f; font-weight: bold;"
-    return ""
-
-
-styler_resumo = (
-    df_display.style.format(
-        {
-            "SLA inicial médio (min)": format_minutes,
-            "SLA interações médio (min)": format_minutes,
-        }
-    )
-    .applymap(color_sla, subset=["SLA inicial médio (min)"])
 )
 
-st.subheader("📌 Resumo geral por corretor (com ranking de SLA)")
+styler_resumo = df_display.style.format(
+    {
+        "SLA inicial médio (min)": format_minutes,
+        "SLA interações médio (min)": format_minutes,
+    }
+)
+
+st.subheader("📌 Resumo geral por corretor")
 st.dataframe(styler_resumo, hide_index=True, use_container_width=True)
 
 # -------- Download CSV da visão por corretor --------
@@ -437,7 +423,6 @@ df_export = df_resumo_corretor.copy().rename(
         "ATENDIDOS": "Leads atendidos",
         "SLA_MEDIO_MIN": "SLA inicial médio (min)",
         "SLA_INTERACOES_MIN": "SLA interações médio (min)",
-        "RANK_SLA": "Ranking SLA",
     }
 )
 csv_bytes = df_export.to_csv(index=False).encode("utf-8-sig")
@@ -448,67 +433,6 @@ st.download_button(
     file_name="resumo_atendimento_por_corretor.csv",
     mime="text/csv",
 )
-
-# ---------------------------------------------------------
-# BUSCAR LEAD ESPECÍFICO
-# ---------------------------------------------------------
-st.markdown("---")
-st.markdown("## 🔎 Buscar lead específico")
-
-nome_busca = st.text_input(
-    "Digite parte do nome do lead para localizar",
-    value="",
-    placeholder="Ex.: Maria, João, Silva...",
-)
-
-df_busca = df_periodo.copy()
-if nome_busca.strip():
-    termo = nome_busca.strip().upper()
-    df_busca = df_busca[df_busca["NOME_LEAD"].str.upper().str.contains(termo)]
-
-if not df_busca.empty:
-    cols_busca = [
-        "NOME_LEAD",
-        "TELEFONE_LEAD",
-        "CORRETOR_EXIBICAO",
-        "DATA_CAPTURA_DT",
-        "DATA_COM_CORRETOR_DT",
-        "DATA_ULT_INTERACAO_DT",
-    ]
-    if col_situacao:
-        cols_busca.append(col_situacao)
-    if col_etapa:
-        cols_busca.append(col_etapa)
-
-    df_busca_tab = df_busca[cols_busca].copy()
-
-    df_busca_tab["DATA_CAPTURA_DT"] = df_busca_tab["DATA_CAPTURA_DT"].apply(fmt_dt)
-    df_busca_tab["DATA_COM_CORRETOR_DT"] = df_busca_tab[
-        "DATA_COM_CORRETOR_DT"
-    ].apply(fmt_dt)
-    df_busca_tab["DATA_ULT_INTERACAO_DT"] = df_busca_tab[
-        "DATA_ULT_INTERACAO_DT"
-    ].apply(fmt_dt)
-
-    rename_busca = {
-        "NOME_LEAD": "Lead",
-        "TELEFONE_LEAD": "Telefone",
-        "CORRETOR_EXIBICAO": "Corretor",
-        "DATA_CAPTURA_DT": "Data de captura",
-        "DATA_COM_CORRETOR_DT": "1º contato com corretor",
-        "DATA_ULT_INTERACAO_DT": "Última interação",
-    }
-    if col_situacao:
-        rename_busca[col_situacao] = "Situação"
-    if col_etapa:
-        rename_busca[col_etapa] = "Etapa"
-
-    df_busca_tab = df_busca_tab.rename(columns=rename_busca)
-
-    st.dataframe(df_busca_tab, use_container_width=True, hide_index=True)
-else:
-    if nome_busca.strip():
-        st.info("Nenhum lead encontrado com esse nome nos filtros selecionados.")
 
 # ---------------------------------------------------------
 # TABELAS DETALHADAS – ATENDIDOS X NÃO ATENDIDOS
@@ -611,8 +535,10 @@ with aba2:
 with aba3:
     st.subheader("📞 Leads com apenas 1 contato")
 
+    # Aqui NÃO consideramos leads perdidos: apenas leads ativos
     df_1_contato = df_periodo[
-        df_periodo["ATENDIDO"]
+        (~df_periodo["PERDIDO"])
+        & df_periodo["ATENDIDO"]
         & df_periodo["DATA_COM_CORRETOR_DT"].notna()
         & (
             df_periodo["DATA_ULT_INTERACAO_DT"].isna()
@@ -628,7 +554,7 @@ with aba3:
     ].copy()
 
     if df_1_contato.empty:
-        st.info("Nenhum lead ficou com apenas um contato no período. 👏")
+        st.info("Nenhum lead ativo ficou com apenas um contato no período. 👏")
     else:
         cols_1c = [
             "NOME_LEAD",

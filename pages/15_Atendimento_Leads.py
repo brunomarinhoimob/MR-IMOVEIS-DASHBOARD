@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from io import BytesIO
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -430,8 +429,7 @@ styler_resumo = (
 st.subheader("📌 Resumo geral por corretor (com ranking de SLA)")
 st.dataframe(styler_resumo, hide_index=True, use_container_width=True)
 
-# -------- Download Excel da visão por corretor --------
-buffer = BytesIO()
+# -------- Download CSV da visão por corretor --------
 df_export = df_resumo_corretor.copy().rename(
     columns={
         "CORRETOR_EXIBICAO": "Corretor",
@@ -442,18 +440,13 @@ df_export = df_resumo_corretor.copy().rename(
         "RANK_SLA": "Ranking SLA",
     }
 )
-
-with pd.ExcelWriter(buffer) as writer:
-    df_export.to_excel(writer, index=False, sheet_name="Resumo_Atendimento_Corretor")
+csv_bytes = df_export.to_csv(index=False).encode("utf-8-sig")
 
 st.download_button(
-    "⬇️ Baixar resumo por corretor (Excel)",
-    data=buffer.getvalue(),
-    file_name="resumo_atendimento_por_corretor.xlsx",
-    mime=(
-        "application/vnd.openxmlformats-officedocument."
-        "spreadsheetml.sheet"
-    ),
+    "⬇️ Baixar resumo por corretor (CSV)",
+    data=csv_bytes,
+    file_name="resumo_atendimento_por_corretor.csv",
+    mime="text/csv",
 )
 
 # ---------------------------------------------------------

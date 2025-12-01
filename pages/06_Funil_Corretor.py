@@ -13,6 +13,12 @@ st.set_page_config(
     layout="wide",
 )
 
+# Logo MR Imóveis na lateral
+try:
+    st.sidebar.image("logo_mr.png", use_container_width=True)
+except Exception:
+    pass
+
 st.title("🧑‍💼 Funil por Corretor – MR Imóveis")
 
 st.caption(
@@ -136,14 +142,34 @@ def conta_aprovacoes(s):
     return (s == "APROVADO").sum()
 
 
-def conta_vendas(s):
-    return s.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+def conta_vendas(s, status_venda=None):
+    """
+    Conta vendas considerando a lista de status informada.
+    Se status_venda for None, considera VENDA GERADA + VENDA INFORMADA.
+    """
+    if status_venda is None:
+        status_venda = ["VENDA GERADA", "VENDA INFORMADA"]
+    return s.isin(status_venda).sum()
 
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
+
+# Tipo de venda considerado no funil
+opcao_venda = st.sidebar.radio(
+    "Tipo de venda para o funil",
+    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
+    index=0,
+)
+
+if opcao_venda == "Só VENDA GERADA":
+    status_venda_considerado = ["VENDA GERADA"]
+    desc_venda = "apenas VENDA GERADA"
+else:
+    status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
+    desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
 dias_validos = pd.Series(df["DIA"].dropna())
 
@@ -194,7 +220,8 @@ registros_filtrados = len(df_periodo)
 st.caption(
     f"Período filtrado: **{data_ini.strftime('%d/%m/%Y')}** até "
     f"**{data_fim.strftime('%d/%m/%Y')}** • "
-    f"Registros considerados: **{registros_filtrados}** (todas as equipes)"
+    f"Registros considerados: **{registros_filtrados}** (todas as equipes) • "
+    f"Vendas consideradas no funil: **{desc_venda}**."
 )
 
 if corretor_sel == "Selecione um corretor":
@@ -247,12 +274,14 @@ if df_cor_periodo.empty:
     )
 else:
     # Separando análises
-    analises_em_cor = conta_analises_base(df_cor_periodo["STATUS_BASE"])   # só EM
-    reanalises_cor = conta_reanalises(df_cor_periodo["STATUS_BASE"])       # só RE
-    analises_total_cor = conta_analises(df_cor_periodo["STATUS_BASE"])     # EM + RE
+    status_cor_periodo = df_cor_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
 
-    aprov_cor = conta_aprovacoes(df_cor_periodo["STATUS_BASE"])
-    vendas_cor = conta_vendas(df_cor_periodo["STATUS_BASE"])
+    analises_em_cor = conta_analises_base(status_cor_periodo)   # só EM
+    reanalises_cor = conta_reanalises(status_cor_periodo)       # só RE
+    analises_total_cor = conta_analises(status_cor_periodo)     # EM + RE
+
+    aprov_cor = conta_aprovacoes(status_cor_periodo)
+    vendas_cor = conta_vendas(status_cor_periodo, status_venda=status_venda_considerado)
     vgv_cor = df_cor_periodo["VGV"].sum()
 
     taxa_aprov_cor = (aprov_cor / analises_em_cor * 100) if analises_em_cor > 0 else 0
@@ -393,9 +422,14 @@ else:
                 f"até {ref_date_cor.date().strftime('%d/%m/%Y')})."
             )
         else:
-            analises_cor_3m_base = conta_analises_base(df_cor_3m["STATUS_BASE"])  # só EM
-            aprov_cor_3m = conta_aprovacoes(df_cor_3m["STATUS_BASE"])
-            vendas_cor_3m = conta_vendas(df_cor_3m["STATUS_BASE"])
+            status_cor_3m = df_cor_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
+
+            analises_cor_3m_base = conta_analises_base(status_cor_3m)  # só EM
+            aprov_cor_3m = conta_aprovacoes(status_cor_3m)
+            vendas_cor_3m = conta_vendas(
+                status_cor_3m,
+                status_venda=status_venda_considerado,
+            )
 
             if vendas_cor_3m > 0:
                 media_analise_por_venda_cor = (
@@ -426,13 +460,14 @@ else:
             with h5:
                 st.metric(
                     "Média de APROVAÇÕES por venda (3m)",
-                    f"{media_aprov_por_venda_cor:.1f}" if aprov_cor_3m > 0 else "—",
+                    f"{media_aprov_por_venda_cor:.1f}" if vendas_cor_3m > 0 else "—",
                 )
 
             st.caption(
                 f"Janela histórica usada para o corretor **{corretor_sel}**: "
                 f"de {limite_3m_cor.date().strftime('%d/%m/%Y')} "
-                f"até {ref_date_cor.date().strftime('%d/%m/%Y')}."
+                f"até {ref_date_cor.date().strftime('%d/%m/%Y')} • "
+                f"Vendas consideradas: {desc_venda}."
             )
 
             st.markdown(
@@ -514,7 +549,7 @@ else:
                             total_meta = aprovacoes_cor_necessarias_int
                         else:  # Vendas
                             df_temp = df_cor_periodo[
-                                status_cor.isin(["VENDA GERADA", "VENDA INFORMADA"])
+                                status_cor.isin(status_venda_considerado)
                             ].copy()
                             total_meta = vendas_planejadas_cor
 

@@ -128,7 +128,7 @@ if dias_validos.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# SIDEBAR – FILTROS (PERÍODO + EQUIPE)
+# SIDEBAR – FILTROS (PERÍODO + EQUIPE + TIPO DE VENDA)
 # ---------------------------------------------------------
 st.sidebar.title("Filtros 🔎")
 
@@ -147,6 +147,20 @@ data_ini, data_fim = periodo
 lista_equipes = sorted(df["EQUIPE"].unique())
 equipe_sel = st.sidebar.selectbox("Equipe (opcional)", ["Todas"] + lista_equipes)
 
+# NOVO FILTRO – tipo de venda a considerar
+opcao_venda = st.sidebar.radio(
+    "Tipo de venda para o ranking",
+    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
+    index=0,
+)
+
+if opcao_venda == "Só VENDA GERADA":
+    status_venda_considerado = ["VENDA GERADA"]
+    desc_venda = "apenas VENDA GERADA"
+else:
+    status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
+    desc_venda = "VENDA GERADA + VENDA INFORMADA"
+
 # Filtra pela janela de datas selecionada
 df_ref = df[
     (df["DIA"] >= data_ini) &
@@ -162,6 +176,7 @@ st.caption(
     f"Período: {data_ini.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}"
     + ("" if equipe_sel == "Todas" else f" • Equipe: {equipe_sel}")
     + f" • Registros na base: {registros_ref}"
+    + f" • Vendas consideradas no ranking: {desc_venda}"
 )
 
 if df_ref.empty:
@@ -184,8 +199,8 @@ analises_por_corretor = (
 df_aprov = df_ref[df_ref["STATUS_BASE"] == "APROVADO"]
 aprov_por_corretor = df_aprov.groupby("CORRETOR").size().rename("APROVACOES")
 
-# Vendas (1 por cliente) e VGV
-df_vendas = df_ref[df_ref["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+# Vendas (1 por cliente) e VGV – usando o filtro de tipo de venda escolhido
+df_vendas = df_ref[df_ref["STATUS_BASE"].isin(status_venda_considerado)].copy()
 
 if not df_vendas.empty:
     df_vendas["CHAVE_CLIENTE"] = (
@@ -194,6 +209,7 @@ if not df_vendas.empty:
         + df_vendas["CPF_CLIENTE_BASE"].fillna("")
     )
     df_vendas = df_vendas.sort_values("DIA")
+    # 1 registro por cliente (o último do período)
     df_vendas_ult = df_vendas.groupby("CHAVE_CLIENTE").tail(1)
 else:
     df_vendas_ult = df_vendas.copy()
@@ -337,7 +353,7 @@ st.altair_chart(chart, use_container_width=True)
 st.markdown(
     "<hr><p style='text-align:center;color:#666;'>"
     "Ranking por corretor baseado em análises, aprovações, vendas (1 por cliente) e VGV, "
-    "filtrado pelo período selecionado."
+    "filtrado pelo período selecionado e pelo tipo de venda escolhido na barra lateral."
     "</p>",
     unsafe_allow_html=True,
 )

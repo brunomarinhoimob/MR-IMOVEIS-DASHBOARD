@@ -13,11 +13,21 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("💰 Painel de Vendas – MR Imóveis")
-st.caption(
-    "Visão consolidada das vendas da imobiliária: VGV, ranking por equipe/corretor, "
-    "evolução diária e mix por construtora/empreendimento."
-)
+# ---------------------------------------------------------
+# CABEÇALHO COM LOGO + TÍTULO
+# ---------------------------------------------------------
+col_logo, col_title = st.columns([1, 4])
+with col_logo:
+    try:
+        st.image("logo_mr.png", use_container_width=True)
+    except Exception:
+        st.write("")
+with col_title:
+    st.title("💰 Painel de Vendas – MR Imóveis")
+    st.caption(
+        "Visão consolidada das vendas da imobiliária: VGV, ranking por equipe/corretor, "
+        "evolução diária e mix por construtora/empreendimento."
+    )
 
 # ---------------------------------------------------------
 # LINK DA PLANILHA
@@ -167,13 +177,22 @@ def conta_aprovacoes(status_serie: pd.Series) -> int:
     return s.str.contains(r"\bAPROVADO\b").sum()
 
 
-def obter_vendas_unicas(df_scope: pd.DataFrame) -> pd.DataFrame:
-    """Uma venda por cliente (último status VENDA GERADA / INFORMADA)."""
+def obter_vendas_unicas(df_scope: pd.DataFrame, status_vendas=None) -> pd.DataFrame:
+    """
+    Uma venda por cliente (último status dentro da lista status_vendas).
+    status_vendas: lista de status que contam como venda
+        - ["VENDA GERADA", "VENDA INFORMADA"]
+        - ["VENDA GERADA"]
+        - ["VENDA INFORMADA"]
+    """
     if df_scope.empty:
         return df_scope.copy()
 
+    if status_vendas is None:
+        status_vendas = ["VENDA GERADA", "VENDA INFORMADA"]
+
     s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
-    df_v = df_scope[s.isin(["VENDA GERADA", "VENDA INFORMADA"])].copy()
+    df_v = df_scope[s.isin(status_vendas)].copy()
     if df_v.empty:
         return df_v
 
@@ -236,6 +255,23 @@ if data_ini_mov > data_fim_mov:
     st.sidebar.error("Data inicial não pode ser maior que a data final.")
     st.stop()
 
+# Tipo de venda considerada
+opcao_tipo_venda = st.sidebar.radio(
+    "Tipo de venda considerada",
+    ("VENDA GERADA + INFORMADA", "Só VENDA GERADA", "Só VENDA INFORMADA"),
+    index=0,
+)
+
+if opcao_tipo_venda == "Só VENDA GERADA":
+    status_vendas_considerados = ["VENDA GERADA"]
+    desc_tipo_venda = "Só VENDA GERADA"
+elif opcao_tipo_venda == "Só VENDA INFORMADA":
+    status_vendas_considerados = ["VENDA INFORMADA"]
+    desc_tipo_venda = "Só VENDA INFORMADA"
+else:
+    status_vendas_considerados = ["VENDA GERADA", "VENDA INFORMADA"]
+    desc_tipo_venda = "VENDA GERADA + INFORMADA"
+
 # Filtro por equipe / corretor
 lista_equipe = (
     df["EQUIPE"].dropna().astype(str).sort_values().unique().tolist()
@@ -286,6 +322,7 @@ st.caption(
     f"**{data_fim_mov.strftime('%d/%m/%Y')}** • Registros na base: **{registros_filtrados}**"
     + (f" • Equipe: **{equipe_sel}**" if equipe_sel != "Todas" else "")
     + (f" • Corretor: **{corretor_sel}**" if corretor_sel != "Todos" else "")
+    + f" • Tipo de venda considerada: **{desc_tipo_venda}**"
 )
 
 if df_periodo.empty:
@@ -295,7 +332,7 @@ if df_periodo.empty:
 # ---------------------------------------------------------
 # AGREGAÇÃO PRINCIPAL – VENDAS E KPIs
 # ---------------------------------------------------------
-df_vendas = obter_vendas_unicas(df_periodo)
+df_vendas = obter_vendas_unicas(df_periodo, status_vendas=status_vendas_considerados)
 qtd_vendas = len(df_vendas)
 vgv_total = df_vendas["VGV"].sum() if not df_vendas.empty else 0.0
 ticket_medio = vgv_total / qtd_vendas if qtd_vendas > 0 else 0.0
@@ -336,21 +373,21 @@ perc_meta = (qtd_vendas / meta_vendas * 100) if meta_vendas > 0 else 0.0
 # ---------------------------------------------------------
 # CÁLCULOS DE VENDAS E EQUIPE PRODUTIVA
 # ---------------------------------------------------------
-# Vendas geradas / informadas (considerando vendas únicas no período)
+# Vendas geradas / informadas (considerando vendas únicas no período filtrado)
 if df_vendas.empty:
     vendas_geradas = 0
     vendas_informadas = 0
 else:
-    status_vendas = df_vendas["STATUS_BASE"].fillna("").astype(str).str.upper()
-    vendas_geradas = (status_vendas == "VENDA GERADA").sum()
-    vendas_informadas = (status_vendas == "VENDA INFORMADA").sum()
+    status_vendas_df = df_vendas["STATUS_BASE"].fillna("").astype(str).str.upper()
+    vendas_geradas = (status_vendas_df == "VENDA GERADA").sum()
+    vendas_informadas = (status_vendas_df == "VENDA INFORMADA").sum()
 vendas_totais = vendas_geradas + vendas_informadas
 
-# Corretores ativos e produtivos no período
+# Corretores ativos e produtivos no período (considerando apenas tipos de venda escolhidos)
 if "CORRETOR" in df_periodo.columns:
     corretores_ativos = df_periodo["CORRETOR"].nunique()
     df_vendas_raw = df_periodo[
-        df_periodo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
+        df_periodo["STATUS_BASE"].isin(status_vendas_considerados)
     ]
     corretores_com_venda = df_vendas_raw["CORRETOR"].nunique()
 else:

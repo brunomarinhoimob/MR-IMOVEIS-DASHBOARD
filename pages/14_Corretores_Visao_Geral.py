@@ -166,10 +166,8 @@ with st.sidebar:
 # ---------------------------------------------------------
 if opcao_tipo_venda == "Só VENDA GERADA":
     status_vendas_considerados = ["VENDA GERADA"]
-
 elif opcao_tipo_venda == "Só VENDA INFORMADA":
     status_vendas_considerados = ["VENDA INFORMADA"]
-
 else:
     status_vendas_considerados = ["VENDA GERADA", "VENDA INFORMADA"]
 
@@ -203,23 +201,35 @@ df_ult_mov = (
     .rename(columns={"DIA": "ULTIMA_DATA"})
 )
 
+# garante datetime
 df_ult_mov["ULTIMA_DATA"] = pd.to_datetime(df_ult_mov["ULTIMA_DATA"], errors="coerce")
-
+# preenche vazios com uma data bem antiga
 df_ult_mov["ULTIMA_DATA"].fillna(pd.Timestamp("1900-01-01"), inplace=True)
-
+# converte para date puro
 df_ult_mov["ULTIMA_DATA_DATE"] = df_ult_mov["ULTIMA_DATA"].dt.date
 
-df_ult_mov["DIAS_SEM_MOV"] = (date.today() - df_ult_mov["ULTIMA_DATA_DATE"]).dt.days
+# ✅ AQUI ESTÁ A CORREÇÃO: nada de .dt depois da subtração
+df_ult_mov["DIAS_SEM_MOV"] = df_ult_mov["ULTIMA_DATA_DATE"].apply(
+    lambda d: (date.today() - d).days if pd.notnull(d) else None
+)
 
 # ---------------------------------------------------------
 # CÁLCULO DE INDICADORES
 # ---------------------------------------------------------
-df_plan_periodo["IS_ANALISE"] = df_plan_periodo["STATUS_BASE_NORM"].isin(["EM ANÁLISE", "REANÁLISE"])
-df_plan_periodo["IS_APROV"] = df_plan_periodo["STATUS_BASE_NORM"].str.contains("APROV", na=False)
+df_plan_periodo["IS_ANALISE"] = df_plan_periodo["STATUS_BASE_NORM"].isin(
+    ["EM ANÁLISE", "REANÁLISE"]
+)
+df_plan_periodo["IS_APROV"] = df_plan_periodo["STATUS_BASE_NORM"].str.contains(
+    "APROV", na=False
+)
 
-df_plan_periodo["IS_VENDA"] = df_plan_periodo["STATUS_BASE_NORM"].isin(status_vendas_considerados)
+df_plan_periodo["IS_VENDA"] = df_plan_periodo["STATUS_BASE_NORM"].isin(
+    status_vendas_considerados
+)
 
-df_plan_periodo["VGV_VENDA"] = np.where(df_plan_periodo["IS_VENDA"], df_plan_periodo["VGV"], 0)
+df_plan_periodo["VGV_VENDA"] = np.where(
+    df_plan_periodo["IS_VENDA"], df_plan_periodo["VGV"], 0
+)
 
 total_analises = int(df_plan_periodo["IS_ANALISE"].sum())
 total_aprov = int(df_plan_periodo["IS_APROV"].sum())
@@ -229,7 +239,7 @@ total_vgv = float(df_plan_periodo["VGV_VENDA"].sum())
 # ---------------------------------------------------------
 # CABEÇALHO
 # ---------------------------------------------------------
-col1, col2 = st.columns([3,1])
+col1, col2 = st.columns([3, 1])
 
 with col1:
     st.markdown(f"""
@@ -265,7 +275,11 @@ df_rank = (
     .reset_index()
 )
 
-df_rank = df_rank.merge(df_ult_mov[["CORRETOR_NORM", "DIAS_SEM_MOV"]], on="CORRETOR_NORM", how="left")
+df_rank = df_rank.merge(
+    df_ult_mov[["CORRETOR_NORM", "DIAS_SEM_MOV"]],
+    on="CORRETOR_NORM",
+    how="left"
+)
 
 df_rank = df_rank.sort_values(by=["EQUIPE_NORM", "VGV"], ascending=[True, False])
 

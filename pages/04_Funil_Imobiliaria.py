@@ -99,13 +99,18 @@ def obter_vendas_unicas(
         + df_v["CPF_CLIENTE_BASE"].fillna("").astype(str).str.strip()
     )
 
-    df_v = df_v.sort_values("DIA")
+    # Ordena por DIA para pegar o último status do cliente
+    if "DIA" in df_v.columns:
+        df_v = df_v.sort_values("DIA")
     df_ult = df_v.groupby("CHAVE_CLIENTE").tail(1).copy()
     return df_ult
 
 
 def format_currency(valor: float) -> str:
-    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    try:
+        return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
+        return "R$ 0,00"
 
 
 # ---------------------------------------------------------
@@ -118,7 +123,7 @@ if df.empty:
     st.stop()
 
 # DIA e DATA_BASE em datetime, DATA_BASE_LABEL já vem do app_dashboard
-df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
+df["DIA"] = pd.to_datetime(df.get("DIA"), errors="coerce")
 
 if "DATA_BASE" in df.columns:
     df["DATA_BASE"] = pd.to_datetime(df["DATA_BASE"], errors="coerce")
@@ -143,6 +148,7 @@ else:
 # Permitimos selecionar datas futuras até 1 ano à frente
 max_futuro = max(data_max_mov, hoje) + timedelta(days=365)
 
+
 # ---------------------------------------------------------
 # SIDEBAR – PERÍODO (DIA x DATA BASE) + TIPO DE VENDA
 # ---------------------------------------------------------
@@ -159,6 +165,9 @@ bases_selecionadas = []
 data_ini_mov = None
 data_fim_mov = None
 
+# ------------------------------
+# MODO POR DIA
+# ------------------------------
 if modo_periodo.startswith("Por DIA"):
     tipo_periodo = "DIA"
 
@@ -183,10 +192,13 @@ if modo_periodo.startswith("Por DIA"):
     mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
     df_periodo = df[mask_mov].copy()
 
+# ------------------------------
+# MODO POR DATA BASE
+# ------------------------------
 else:
     tipo_periodo = "DATA_BASE"
 
-    # 👉 AQUI É O AJUSTE: uma opção por mês, igual ao app principal
+    # Uma opção por mês comercial, em ordem cronológica
     bases_df = (
         df[["DATA_BASE", "DATA_BASE_LABEL"]]
         .dropna(subset=["DATA_BASE"])
@@ -200,18 +212,39 @@ else:
         st.error("Sem datas base válidas na planilha para filtrar.")
         st.stop()
 
-    default_labels = opcoes[-2:] if len(opcoes) >= 2 else opcoes
+    # Intervalo padrão: últimos 2 meses base (ou o único, se só tiver 1)
+    if len(opcoes) >= 2:
+        default_range = (opcoes[-2], opcoes[-1])
+    else:
+        default_range = (opcoes[0], opcoes[0])
 
-    bases_selecionadas = st.sidebar.multiselect(
+    base_ini_label, base_fim_label = st.sidebar.select_slider(
         "Período por DATA BASE (mês comercial)",
         options=opcoes,
-        default=default_labels,
+        value=default_range,
     )
 
-    if not bases_selecionadas:
-        bases_selecionadas = opcoes
+    # Garante que o início seja sempre antes ou igual ao fim
+    idx_ini = opcoes.index(base_ini_label)
+    idx_fim = opcoes.index(base_fim_label)
+    if idx_ini > idx_fim:
+        idx_ini, idx_fim = idx_fim, idx_ini
+        base_ini_label, base_fim_label = opcoes[idx_ini], opcoes[idx_fim]
 
-    df_periodo = df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
+    # Lista completa de meses dentro do intervalo (pra legendas)
+    bases_selecionadas = opcoes[idx_ini : idx_fim + 1]
+
+    # Datas base reais (usando a tabela deduplicada)
+    base_ini_date = bases_df.loc[
+        bases_df["DATA_BASE_LABEL"] == base_ini_label, "DATA_BASE"
+    ].iloc[0]
+    base_fim_date = bases_df.loc[
+        bases_df["DATA_BASE_LABEL"] == base_fim_label, "DATA_BASE"
+    ].iloc[0]
+
+    # Filtra pela DATA_BASE no intervalo
+    mask_base = (df["DATA_BASE"] >= base_ini_date) & (df["DATA_BASE"] <= base_fim_date)
+    df_periodo = df[mask_base].copy()
 
     # Define intervalo real de movimentação (DIA) dentro dos meses selecionados
     dias_sel = df_periodo["DIA"].dropna()
@@ -222,7 +255,9 @@ else:
         data_ini_mov = data_min_mov
         data_fim_mov = data_max_mov
 
-# Filtro de tipo de venda
+# ------------------------------
+# FILTRO DE TIPO DE VENDA
+# ------------------------------
 opcao_venda = st.sidebar.radio(
     "Tipo de venda para o funil",
     ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
@@ -236,7 +271,9 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
-# Caption do período
+# ------------------------------
+# CAPTION DO PERÍODO
+# ------------------------------
 if tipo_periodo == "DIA":
     label_extra = ""
 else:
@@ -256,9 +293,12 @@ if df_periodo.empty:
     st.warning("Nenhum registro encontrado para o período selecionado.")
     st.stop()
 
+
 # ---------------------------------------------------------
 # KPIs PRINCIPAIS – FUNIL DO PERÍODO
 # ---------------------------------------------------------
+st.markdown("## 🧭 Funil da Imobiliária – Período Selecionado")
+
 status_periodo = df_periodo["STATUS_BASE"].fillna("").astype(str).str.upper()
 
 analises_em = conta_analises_base(status_periodo)
@@ -280,9 +320,7 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
 
-# ---------------------------------------------------------
-# LEADS DO PERÍODO (CRM SUPREMO VIA SESSION_STATE)
-# ---------------------------------------------------------
+# LEADS – CRM SUPREMO (SESSION_STATE)
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
 total_leads_periodo = None
@@ -312,11 +350,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             total_leads_periodo / analises_em if analises_em > 0 else None
         )
 
-# ---------------------------------------------------------
-# BLOCO PRINCIPAL DO FUNIL
-# ---------------------------------------------------------
-st.markdown("## 🧭 Funil da Imobiliária – Período Selecionado")
-
+# KPIs de leads
 lc1, lc2, lc3 = st.columns(3)
 with lc1:
     st.metric(
@@ -340,6 +374,7 @@ with lc3:
     else:
         st.metric("Relação leads/análise (só EM)", "—")
 
+# KPIs de funil
 c1, c2, c3, c4, c5 = st.columns(5)
 with c1:
     st.metric("Análises (só EM)", analises_em)
@@ -369,7 +404,28 @@ with c10:
         f"{ipc_periodo:.2f}" if ipc_periodo is not None else "—",
     )
 
+# Gráfico do funil no período
+st.markdown("### 📊 Gráfico do funil (período selecionado)")
+dados_funil = pd.DataFrame(
+    {
+        "Etapa": ["Análises (EM)", "Reanálises", "Aprovações", "Vendas"],
+        "Quantidade": [analises_em, reanalises, aprovacoes, vendas],
+    }
+)
+
+chart_funil = (
+    alt.Chart(dados_funil)
+    .mark_bar()
+    .encode(
+        x=alt.X("Etapa:N", sort=None, title="Etapas do funil"),
+        y=alt.Y("Quantidade:Q", title="Quantidade"),
+        tooltip=["Etapa", "Quantidade"],
+    )
+)
+st.altair_chart(chart_funil, use_container_width=True)
+
 st.markdown("---")
+
 
 # ---------------------------------------------------------
 # PRODUTIVIDADE – EQUIPE ATIVA
@@ -417,6 +473,7 @@ else:
     )
 
 st.markdown("---")
+
 
 # ---------------------------------------------------------
 # HISTÓRICO – FUNIL DOS ÚLTIMOS 3 MESES (DATA BASE)
@@ -525,4 +582,30 @@ else:
                     f"{aprovacoes_necessarias} aprovações",
                 )
 
-        # (gráfico de acompanhamento mantido igual ao anterior – cortei aqui só pra resposta não ficar gigante)
+        # Gráfico histórico de vendas por DATA BASE (últimos 3 meses)
+        st.markdown("### 📊 Vendas por DATA BASE (últimos 3 meses)")
+
+        df_vendas_3m_chart = df_vendas_3m.copy()
+        if "DATA_BASE_LABEL" not in df_vendas_3m_chart.columns:
+            df_vendas_3m_chart["DATA_BASE_LABEL"] = df_vendas_3m_chart["DATA_BASE"].dt.strftime("%m/%Y")
+
+        if df_vendas_3m_chart.empty:
+            st.info("Não há vendas nos últimos 3 meses para montar o gráfico.")
+        else:
+            vendas_por_base = (
+                df_vendas_3m_chart.dropna(subset=["DATA_BASE_LABEL"])
+                .groupby("DATA_BASE_LABEL")
+                .size()
+                .reset_index(name="Vendas")
+            )
+
+            chart_hist = (
+                alt.Chart(vendas_por_base)
+                .mark_bar()
+                .encode(
+                    x=alt.X("DATA_BASE_LABEL:N", title="Data base (mês/ano)"),
+                    y=alt.Y("Vendas:Q", title="Vendas únicas"),
+                    tooltip=["DATA_BASE_LABEL", "Vendas"],
+                )
+            )
+            st.altair_chart(chart_hist, use_container_width=True)

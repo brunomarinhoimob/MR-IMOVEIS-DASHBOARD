@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import altair as alt
 from datetime import date, timedelta
 
 from app_dashboard import carregar_dados_planilha
@@ -27,7 +26,7 @@ with col_title:
     st.title("🔻 Funil de Vendas – Visão Imobiliária")
     st.caption(
         "Visão consolidada da MR Imóveis: produtividade da equipe, funil de análises → "
-        "aprovações → vendas e previsibilidade com base nos últimos 3 meses."
+        "aprovações → vendas e previsibilidade a partir do funil do período selecionado."
     )
 
 
@@ -134,7 +133,6 @@ if "DATA_BASE_LABEL" not in df.columns:
     df["DATA_BASE_LABEL"] = df["DATA_BASE"].dt.strftime("%m/%Y")
 
 dias_validos = df["DIA"].dropna()
-bases_validas = df["DATA_BASE"].dropna()
 
 # Limites de datas de movimentação
 hoje = date.today()
@@ -175,7 +173,7 @@ if data_ini_mov > data_fim_mov:
 mask_dia = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
 df_periodo = df[mask_dia].copy()
 
-# 2) Período por DATA BASE (mês comercial) – mesma lógica do app principal
+# 2) Período por DATA BASE (mês comercial) – igual app principal, sem repetir mês
 bases_df = (
     df[["DATA_BASE", "DATA_BASE_LABEL"]]
     .dropna(subset=["DATA_BASE"])
@@ -198,12 +196,11 @@ bases_selecionadas = st.sidebar.multiselect(
 )
 
 if not bases_selecionadas:
-    # Se nada for marcado, considera todas as bases
     bases_selecionadas = opcoes_bases
 
 df_periodo = df_periodo[df_periodo["DATA_BASE_LABEL"].isin(bases_selecionadas)].copy()
 
-# Filtro de tipo de venda
+# 3) Tipo de venda
 opcao_venda = st.sidebar.radio(
     "Tipo de venda para o funil",
     ("VENDA GERADA + INFORMADA", "Só VENDA GERADA"),
@@ -293,9 +290,7 @@ if not df_leads.empty and "data_captura" in df_leads.columns:
             total_leads_periodo / analises_em if analises_em > 0 else None
         )
 
-# ---------------------------------------------------------
-# BLOCO PRINCIPAL DO FUNIL
-# ---------------------------------------------------------
+# BLOCO PRINCIPAL DO FUNIL – MESMO VISUAL DO PRIMEIRO PRINT
 lc1, lc2, lc3 = st.columns(3)
 with lc1:
     st.metric(
@@ -348,31 +343,11 @@ with c10:
         f"{ipc_periodo:.2f}" if ipc_periodo is not None else "—",
     )
 
-# Gráfico do funil no período
-st.markdown("### 📊 Gráfico do funil (período selecionado)")
-dados_funil = pd.DataFrame(
-    {
-        "Etapa": ["Análises (EM)", "Reanálises", "Aprovações", "Vendas"],
-        "Quantidade": [analises_em, reanalises, aprovacoes, vendas],
-    }
-)
-
-chart_funil = (
-    alt.Chart(dados_funil)
-    .mark_bar()
-    .encode(
-        x=alt.X("Etapa:N", sort=None, title="Etapas do funil"),
-        y=alt.Y("Quantidade:Q", title="Quantidade"),
-        tooltip=["Etapa", "Quantidade"],
-    )
-)
-st.altair_chart(chart_funil, use_container_width=True)
-
 st.markdown("---")
 
 
 # ---------------------------------------------------------
-# PRODUTIVIDADE – EQUIPE ATIVA
+# PRODUTIVIDADE – EQUIPE ATIVA (A MESMA DO PRIMEIRO PRINT)
 # ---------------------------------------------------------
 st.markdown("## 👥 Produtividade da equipe – período selecionado")
 
@@ -420,136 +395,50 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------
-# HISTÓRICO – FUNIL DOS ÚLTIMOS 3 MESES (DATA BASE)
+# PLANEJAMENTO BASEADO NO FUNIL DO PERÍODO (CONECTADO À DATA BASE)
 # ---------------------------------------------------------
-st.markdown("## 📈 Funil histórico – últimos 3 meses (DATA BASE)")
+st.markdown("## 🎯 Planejamento com base no funil do período (DATA BASE selecionada)")
 
-analises_necessarias = 0
-aprovacoes_necessarias = 0
-meta_vendas = 0
+# Usa o próprio funil filtrado (df_periodo) para tirar as proporções
+if vendas > 0:
+    analises_por_venda = analises_em / vendas if analises_em > 0 else 0.0
+    aprovacoes_por_venda = aprovacoes / vendas if aprovacoes > 0 else 0.0
 
-if bases_validas.empty:
-    st.info("Não há DATA BASE válida para calcular o histórico de 3 meses.")
+    # Meta de vendas: padrão = vendas atuais do período
+    meta_vendas = st.number_input(
+        "Meta de vendas (imobiliária) para o próximo período",
+        min_value=0,
+        step=1,
+        value=int(vendas),
+    )
+
+    analises_necessarias = 0
+    aprovacoes_necessarias = 0
+
+    if meta_vendas > 0:
+        analises_necessarias = int(np.ceil(analises_por_venda * meta_vendas))
+        aprovacoes_necessarias = int(np.ceil(aprovacoes_por_venda * meta_vendas))
+
+        c23, c24, c25 = st.columns(3)
+        with c23:
+            st.metric("Meta de vendas (planejada)", meta_vendas)
+        with c24:
+            st.metric(
+                "Análises necessárias (aprox.)",
+                f"{analises_necessarias} análises",
+            )
+        with c25:
+            st.metric(
+                "Aprovações necessárias (aprox.)",
+                f"{aprovacoes_necessarias} aprovações",
+            )
+
+    st.caption(
+        "Cálculos feitos com base no funil filtrado por DIA + DATA BASE acima. "
+        "Se você alterar o período ou a DATA BASE, as quantidades necessárias se recalculam automaticamente."
+    )
 else:
-    data_ref_base = bases_validas.max()
-    inicio_3m = data_ref_base - pd.DateOffset(months=3)
-
-    mask_3m = (df["DATA_BASE"] >= inicio_3m) & (df["DATA_BASE"] <= data_ref_base)
-    df_3m = df[mask_3m].copy()
-
-    if df_3m.empty:
-        st.info(
-            f"Não há registros na janela dos últimos 3 meses de DATA BASE "
-            f"(de {inicio_3m.date().strftime('%d/%m/%Y')} "
-            f"até {data_ref_base.date().strftime('%d/%m/%Y')})."
-        )
-    else:
-        status_3m = df_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
-
-        analises_3m = conta_analises_base(status_3m)
-        aprov_3m = conta_aprovacoes(status_3m)
-        df_vendas_3m = obter_vendas_unicas(
-            df_3m,
-            status_venda=status_venda_considerado,
-        )
-        vendas_3m = len(df_vendas_3m)
-        vgv_3m = df_vendas_3m["VGV"].sum() if not df_vendas_3m.empty else 0.0
-
-        corretores_ativos_3m = df_3m["CORRETOR"].dropna().astype(str).nunique()
-        ipc_3m = (vendas_3m / corretores_ativos_3m) if corretores_ativos_3m > 0 else None
-
-        if vendas_3m > 0:
-            analises_por_venda = analises_3m / vendas_3m if analises_3m > 0 else 0.0
-            aprovacoes_por_venda = aprov_3m / vendas_3m if aprov_3m > 0 else 0.0
-        else:
-            analises_por_venda = 0.0
-            aprovacoes_por_venda = 0.0
-
-        c15, c16, c17, c18 = st.columns(4)
-        with c15:
-            st.metric("Análises (3m – só EM)", analises_3m)
-        with c16:
-            st.metric("Aprovações (3m)", aprov_3m)
-        with c17:
-            st.metric("Vendas (3m – únicas)", vendas_3m)
-        with c18:
-            st.metric("VGV (3m)", format_currency(vgv_3m))
-
-        c19, c20, c21 = st.columns(3)
-        with c19:
-            st.metric("Corretores ativos (3m)", corretores_ativos_3m)
-        with c20:
-            st.metric(
-                "IPC 3m (vendas/corretor)",
-                f"{ipc_3m:.2f}" if ipc_3m is not None else "—",
-            )
-        with c21:
-            st.metric(
-                "Média de análises por venda (3m)",
-                f"{analises_por_venda:.1f}" if vendas_3m > 0 else "—",
-            )
-
-        st.metric(
-            "Média de aprovações por venda (3m)",
-            f"{aprovacoes_por_venda:.1f}" if vendas_3m > 0 else "—",
-        )
-
-        st.caption(
-            f"Janela de análise (DATA BASE): de {inicio_3m.date().strftime('%d/%m/%Y')} "
-            f"até {data_ref_base.date().strftime('%d/%m/%Y')}."
-        )
-
-        st.markdown("### 🎯 Planejamento com base no funil dos últimos 3 meses")
-
-        meta_vendas = st.number_input(
-            "Meta de vendas (imobiliária) para o próximo período",
-            min_value=0,
-            step=1,
-            value=int(vendas_3m / 3) if vendas_3m > 0 else 10,
-        )
-
-        if meta_vendas > 0 and vendas_3m > 0:
-            analises_necessarias = int(np.ceil(analises_por_venda * meta_vendas))
-            aprovacoes_necessarias = int(np.ceil(aprovacoes_por_venda * meta_vendas))
-
-            c23, c24, c25 = st.columns(3)
-            with c23:
-                st.metric("Meta de vendas (planejada)", meta_vendas)
-            with c24:
-                st.metric(
-                    "Análises necessárias (aprox.)",
-                    f"{analises_necessarias} análises",
-                )
-            with c25:
-                st.metric(
-                    "Aprovações necessárias (aprox.)",
-                    f"{aprovacoes_necessarias} aprovações",
-                )
-
-        # Gráfico histórico de vendas por DATA BASE (últimos 3 meses)
-        st.markdown("### 📊 Vendas por DATA BASE (últimos 3 meses)")
-
-        df_vendas_3m_chart = df_vendas_3m.copy()
-        if "DATA_BASE_LABEL" not in df_vendas_3m_chart.columns:
-            df_vendas_3m_chart["DATA_BASE_LABEL"] = df_vendas_3m_chart["DATA_BASE"].dt.strftime("%m/%Y")
-
-        if df_vendas_3m_chart.empty:
-            st.info("Não há vendas nos últimos 3 meses para montar o gráfico.")
-        else:
-            vendas_por_base = (
-                df_vendas_3m_chart.dropna(subset=["DATA_BASE_LABEL"])
-                .groupby("DATA_BASE_LABEL")
-                .size()
-                .reset_index(name="Vendas")
-            )
-
-            chart_hist = (
-                alt.Chart(vendas_por_base)
-                .mark_bar()
-                .encode(
-                    x=alt.X("DATA_BASE_LABEL:N", title="Data base (mês/ano)"),
-                    y=alt.Y("Vendas:Q", title="Vendas únicas"),
-                    tooltip=["DATA_BASE_LABEL", "Vendas"],
-                )
-            )
-            st.altair_chart(chart_hist, use_container_width=True)
+    st.info(
+        "Ainda não há vendas no período selecionado para projetar a quantidade de análises e aprovações. "
+        "Ajuste o filtro de DATA BASE ou de movimentação para um período com vendas."
+    )

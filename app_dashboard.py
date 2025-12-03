@@ -209,10 +209,15 @@ def carregar_dados_planilha() -> pd.DataFrame:
         "DATA REFERENCIA",
     ]
     col_data_base = next((c for c in possiveis_cols_base if c in df.columns), None)
+
     if col_data_base:
         df["DATA_BASE"] = limpar_para_data(df[col_data_base])
     else:
-        # fallback: usa DIA como base se não existir coluna específica
+        # fallback: usa DIA se não houver coluna específica
+        df["DATA_BASE"] = df["DIA"]
+
+    # SE A DATA_BASE FICAR TODA VAZIA (NaT), CAI PRA DIA
+    if df["DATA_BASE"].dropna().empty:
         df["DATA_BASE"] = df["DIA"]
 
     # EQUIPE / CORRETOR
@@ -407,6 +412,10 @@ modo_periodo = st.sidebar.radio(
 
 dias_validos = df["DIA"].dropna()
 bases_validas = df["DATA_BASE"].dropna()
+
+# fallback extra de segurança: se DATA_BASE estiver vazia, usa DIA
+if bases_validas.empty:
+    bases_validas = dias_validos
 
 # Segurança caso venha tudo vazio (evita erro)
 if dias_validos.empty and bases_validas.empty:

@@ -604,7 +604,7 @@ else:
             with c25:
                 st.metric(
                     "Aprovações necessárias (aprox.)",
-                    f"{aprovacoes_necessarias} aprovações",
+                    f"{aprovações_necessarias} aprovações",
                 )
 
             st.caption(
@@ -642,7 +642,9 @@ else:
                 data_fim_sel = data_fim_mov
 
             if data_ini_sel > data_fim_sel:
-                st.error("A data inicial do acompanhamento não pode ser maior que a data final.")
+                st.error(
+                    "A data inicial do acompanhamento não pode ser maior que a data final."
+                )
             else:
                 # range de dias do acompanhamento (livre)
                 dr = pd.date_range(start=data_ini_sel, end=data_fim_sel, freq="D")
@@ -704,6 +706,12 @@ else:
                         df_line["Real"] = cont_por_dia.values
                         df_line["Real"] = df_line["Real"].cumsum()
 
+                        # 👇 aqui entra teu pedido: linha REAL para no último dia com movimento
+                        ultimo_mov = df_temp["DIA_DATA"].max()
+                        if pd.notnull(ultimo_mov):
+                            mask_future_real = df_line.index.date > ultimo_mov
+                            df_line.loc[mask_future_real, "Real"] = np.nan
+
                         # linha Meta linear de 0 até total_meta no intervalo escolhido
                         df_line["Meta"] = np.linspace(
                             0, total_meta, num=len(df_line), endpoint=True
@@ -732,7 +740,8 @@ else:
 
                         st.altair_chart(chart, use_container_width=True)
                         st.caption(
-                            "Linha **Real** = indicador acumulado da equipe **apenas dentro do intervalo escolhido**. "
+                            "Linha **Real** = indicador acumulado da equipe **apenas dentro do intervalo escolhido**, "
+                            "parando no último dia com movimentação. "
                             "Linha **Meta** = ritmo necessário, do início ao fim do intervalo, "
                             "para atingir o total de análises/aprovações/vendas calculado com base nos últimos 3 meses."
                         )

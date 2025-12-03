@@ -207,16 +207,18 @@ with col_title:
     )
 
 # opções de DATA BASE só da equipe selecionada
-bases_validas = df["DATA_BASE"].dropna()
+bases_validas_dt = pd.to_datetime(df["DATA_BASE"], errors="coerce")
+bases_validas = bases_validas_dt.dropna()
+
 if bases_validas.empty:
     st.error("Essa equipe não possui DATA BASE válida na planilha.")
     st.stop()
 
 df_bases = (
-    df[["DATA_BASE", "DATA_BASE_LABEL"]]
-    .dropna(subset=["DATA_BASE"])
+    df.assign(DATA_BASE_DT=bases_validas_dt)[["DATA_BASE_DT", "DATA_BASE_LABEL"]]
+    .dropna(subset=["DATA_BASE_DT"])
     .drop_duplicates(subset=["DATA_BASE_LABEL"])
-    .sort_values("DATA_BASE")
+    .sort_values("DATA_BASE_DT")
 )
 
 opcoes_bases = df_bases["DATA_BASE_LABEL"].tolist()
@@ -507,10 +509,12 @@ meta_vendas = 0
 if bases_validas.empty:
     st.info("Não há DATA BASE válida para calcular o histórico de 3 meses.")
 else:
-    data_ref_base = bases_validas.max()
+    data_ref_base = bases_validas.max()               # Timestamp
     inicio_3m = data_ref_base - pd.DateOffset(months=3)
 
-    mask_3m = (df["DATA_BASE"] >= inicio_3m) & (df["DATA_BASE"] <= data_ref_base)
+    # usa DATA_BASE convertida pra datetime pra comparar
+    col_base_dt = pd.to_datetime(df["DATA_BASE"], errors="coerce")
+    mask_3m = (col_base_dt >= inicio_3m) & (col_base_dt <= data_ref_base)
     df_3m = df[mask_3m].copy()
 
     if df_3m.empty:

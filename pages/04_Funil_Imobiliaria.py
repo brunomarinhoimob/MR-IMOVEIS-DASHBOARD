@@ -132,6 +132,7 @@ else:
 if "DATA_BASE_LABEL" not in df.columns:
     df["DATA_BASE_LABEL"] = df["DATA_BASE"].dt.strftime("%m/%Y")
 
+
 # ---------------------------------------------------------
 # SIDEBAR – APENAS SELETOR DE DATA BASE + TIPO DE VENDA
 # ---------------------------------------------------------
@@ -178,19 +179,58 @@ else:
     status_venda_considerado = ["VENDA GERADA", "VENDA INFORMADA"]
     desc_venda = "VENDA GERADA + VENDA INFORMADA"
 
+if df_periodo.empty:
+    st.warning("Nenhum registro encontrado para o período selecionado pela DATA BASE.")
+    st.stop()
+
+
 # ---------------------------------------------------------
 # DEFININDO O INTERVALO DE DIAS A PARTIR DA DATA BASE
 # ---------------------------------------------------------
-dias_sel = df_periodo["DIA"].dropna()
+# Tentamos usar colunas específicas de início/fim de base, se existirem
+possiveis_inicio = [
+    "DATA_BASE_INICIO",
+    "DATA_INICIO_BASE",
+    "INICIO_BASE",
+    "DIA_INICIO_BASE",
+    "PERIODO_INICIO",
+]
+possiveis_fim = [
+    "DATA_BASE_FIM",
+    "DATA_FIM_BASE",
+    "FIM_BASE",
+    "DIA_FIM_BASE",
+    "PERIODO_FIM",
+]
 
-if not dias_sel.empty:
-    data_ini_mov = dias_sel.min().date()
-    data_fim_mov = dias_sel.max().date()
+col_inicio = next((c for c in possiveis_inicio if c in df.columns), None)
+col_fim = next((c for c in possiveis_fim if c in df.columns), None)
+
+if col_inicio and col_fim:
+    # Converte essas colunas pra datetime
+    df[col_inicio] = pd.to_datetime(df[col_inicio], errors="coerce")
+    df[col_fim] = pd.to_datetime(df[col_fim], errors="coerce")
+
+    limites = (
+        df[df["DATA_BASE_LABEL"].isin(bases_selecionadas)]
+        .groupby("DATA_BASE_LABEL")
+        .agg(inicio=(col_inicio, "min"), fim=(col_fim, "max"))
+        .sort_index()
+    )
+
+    # Usa o primeiro início e o último fim das bases selecionadas
+    data_ini_mov = limites["inicio"].iloc[0].date()
+    data_fim_mov = limites["fim"].iloc[-1].date()
 else:
-    # fallback: usa hoje se não tiver DIA na base filtrada
-    hoje = date.today()
-    data_ini_mov = hoje
-    data_fim_mov = hoje
+    # fallback: usa min/max da coluna DIA dentro das bases selecionadas
+    dias_sel = df_periodo["DIA"].dropna()
+    if not dias_sel.empty:
+        data_ini_mov = dias_sel.min().date()
+        data_fim_mov = dias_sel.max().date()
+    else:
+        hoje = date.today()
+        data_ini_mov = hoje
+        data_fim_mov = hoje
 
 # Texto da data base
 if len(bases_selecionadas) == 1:
@@ -203,10 +243,6 @@ st.caption(
     f"Dias: **{data_ini_mov.strftime('%d/%m/%Y')}** até **{data_fim_mov.strftime('%d/%m/%Y')}** • "
     f"Vendas consideradas no funil: **{desc_venda}**."
 )
-
-if df_periodo.empty:
-    st.warning("Nenhum registro encontrado para o período selecionado pela DATA BASE.")
-    st.stop()
 
 
 # ---------------------------------------------------------
@@ -234,6 +270,7 @@ taxa_venda_aprov = (vendas / aprovacoes * 100) if aprovacoes > 0 else 0.0
 
 corretores_ativos_periodo = df_periodo["CORRETOR"].dropna().astype(str).nunique()
 ipc_periodo = (vendas / corretores_ativos_periodo) if corretores_ativos_periodo > 0 else None
+
 
 # ---------------------------------------------------------
 # LEADS DO PERÍODO (CRM SUPREMO VIA SESSION_STATE)

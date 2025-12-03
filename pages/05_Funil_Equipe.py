@@ -618,129 +618,121 @@ else:
             )
 
         # -------------------------------------------------
-        # GRÁFICO – META x REAL (EQUIPE)
+        # GRÁFICO – META x REAL (EQUIPE) COM INTERVALO LIVRE
         # -------------------------------------------------
         if meta_vendas > 0 and vendas_3m > 0 and not df_periodo.empty:
-            st.markdown("### 📊 Acompanhamento da meta da equipe no período selecionado")
+            st.markdown("### 📊 Acompanhamento da meta no intervalo escolhido")
 
             indicador = st.selectbox(
                 "Indicador para comparar com a meta",
                 ["Análises", "Aprovações", "Vendas"],
             )
 
-            # seletor de data final para a meta
-            data_fim_meta = st.date_input(
-                "Data final para atingir a meta",
-                value=data_fim_mov,
-                min_value=data_ini_mov,
+            # seletor de faixa de datas (intervalo livre)
+            periodo_meta = st.date_input(
+                "Período do acompanhamento da meta",
+                value=(data_ini_mov, data_fim_mov),
             )
 
-            # eixo de dias: de data_ini_mov até data_fim_meta
-            dr = pd.date_range(start=data_ini_mov, end=data_fim_meta, freq="D")
-            dias_periodo = [d.date() for d in dr]
-
-            if len(dias_periodo) == 0:
-                st.info("Não há datas válidas no período para montar o gráfico.")
+            # garante que veio uma tupla (início, fim)
+            if isinstance(periodo_meta, tuple) and len(periodo_meta) == 2:
+                data_ini_sel, data_fim_sel = periodo_meta
             else:
-                idx = pd.to_datetime(dias_periodo)
-                df_line = pd.DataFrame(index=idx)
-                df_line.index.name = "DIA"
+                data_ini_sel = data_ini_mov
+                data_fim_sel = data_fim_mov
 
-                if indicador == "Análises":
-                    df_temp = df_periodo[
-                        df_periodo["STATUS_BASE"]
-                        .fillna("")
-                        .astype(str)
-                        .str.upper()
-                        == "EM ANÁLISE"
-                    ].copy()
-                    total_meta = analises_necessarias
-                elif indicador == "Aprovações":
-                    df_temp = df_periodo[
-                        df_periodo["STATUS_BASE"]
-                        .fillna("")
-                        .astype(str)
-                        .str.upper()
-                        == "APROVADO"
-                    ].copy()
-                    total_meta = aprovacoes_necessarias
+            if data_ini_sel > data_fim_sel:
+                st.error("A data inicial do acompanhamento não pode ser maior que a data final.")
+            else:
+                # range de dias do acompanhamento (livre)
+                dr = pd.date_range(start=data_ini_sel, end=data_fim_sel, freq="D")
+                dias_meta = [d.date() for d in dr]
+
+                if len(dias_meta) == 0:
+                    st.info("Não há datas válidas no período para montar o gráfico.")
                 else:
-                    df_temp = obter_vendas_unicas(
-                        df_periodo,
-                        status_venda=status_venda_considerado,
-                    ).copy()
-                    total_meta = meta_vendas
+                    # base filtrada pelo intervalo de acompanhamento
+                    df_periodo["DIA_DATA"] = pd.to_datetime(df_periodo["DIA"]).dt.date
+                    df_range = df_periodo[
+                        (df_periodo["DIA_DATA"] >= data_ini_sel)
+                        & (df_periodo["DIA_DATA"] <= data_fim_sel)
+                    ].copy()
 
-                if df_temp.empty or total_meta == 0:
-                    st.info(
-                        "Não há dados suficientes ou a meta está zerada para o indicador escolhido."
-                    )
-                else:
-                    df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"]).dt.date
-                    cont_por_dia = (
-                        df_temp.groupby("DIA_DATA")
-                        .size()
-                        .reindex(dias_periodo, fill_value=0)
-                    )
+                    if indicador == "Análises":
+                        df_temp = df_range[
+                            df_range["STATUS_BASE"]
+                            .fillna("")
+                            .astype(str)
+                            .str.upper()
+                            == "EM ANÁLISE"
+                        ].copy()
+                        total_meta = analises_necessarias
+                    elif indicador == "Aprovações":
+                        df_temp = df_range[
+                            df_range["STATUS_BASE"]
+                            .fillna("")
+                            .astype(str)
+                            .str.upper()
+                            == "APROVADO"
+                        ].copy()
+                        total_meta = aprovacoes_necessarias
+                    else:
+                        df_temp = obter_vendas_unicas(
+                            df_range,
+                            status_venda=status_venda_considerado,
+                        ).copy()
+                        total_meta = meta_vendas
 
-                    # linha Real acumulada
-                    df_line["Real"] = cont_por_dia.values
-                    df_line["Real"] = df_line["Real"].cumsum()
-
-                    hoje_date = date.today()
-                    ultimo_mov = df_temp["DIA_DATA"].max()
-                    limite_real = min(hoje_date, ultimo_mov, data_fim_meta)
-
-                    mask_future = df_line.index.date > limite_real
-                    df_line.loc[mask_future, "Real"] = np.nan
-
-                    # linha Meta vai até a data final escolhida
-                    df_line["Meta"] = np.linspace(
-                        0, total_meta, num=len(df_line), endpoint=True
-                    )
-
-                    df_plot = (
-                        df_line.reset_index()
-                        .melt("DIA", var_name="Série", value_name="Valor")
-                    )
-
-                    chart = (
-                        alt.Chart(df_plot)
-                        .mark_line(point=True)
-                        .encode(
-                            x=alt.X("DIA:T", title="Dia (movimentação)"),
-                            y=alt.Y("Valor:Q", title="Quantidade acumulada"),
-                            color=alt.Color("Série:N", title=""),
-                            tooltip=[
-                                alt.Tooltip("DIA:T", title="Dia"),
-                                alt.Tooltip("Série:N", title="Série"),
-                                alt.Tooltip("Valor:Q", title="Quantidade"),
-                            ],
+                    if df_temp.empty or total_meta == 0:
+                        st.info(
+                            "Não há dados suficientes nesse intervalo "
+                            "ou a meta está zerada para o indicador escolhido."
                         )
-                        .properties(height=320)
-                    )
+                    else:
+                        df_temp["DIA_DATA"] = pd.to_datetime(df_temp["DIA"]).dt.date
+                        cont_por_dia = (
+                            df_temp.groupby("DIA_DATA")
+                            .size()
+                            .reindex(dias_meta, fill_value=0)
+                        )
 
-                    # marca o ponto do dia de hoje (ou último movimento) se estiver dentro
-                    hoje_dentro = (limite_real >= data_ini_mov) and (
-                        limite_real <= data_fim_meta
-                    )
-                    if hoje_dentro:
-                        df_real_reset = df_line.reset_index()
-                        df_real_hoje = df_real_reset[
-                            df_real_reset["DIA"].dt.date == limite_real
-                        ]
-                        if not df_real_hoje.empty:
-                            ponto_hoje = (
-                                alt.Chart(df_real_hoje)
-                                .mark_point(size=80)
-                                .encode(x="DIA:T", y="Real:Q")
+                        # linha Real acumulada (só dentro do intervalo selecionado)
+                        idx = pd.to_datetime(dias_meta)
+                        df_line = pd.DataFrame(index=idx)
+                        df_line.index.name = "DIA"
+
+                        df_line["Real"] = cont_por_dia.values
+                        df_line["Real"] = df_line["Real"].cumsum()
+
+                        # linha Meta linear de 0 até total_meta no intervalo escolhido
+                        df_line["Meta"] = np.linspace(
+                            0, total_meta, num=len(df_line), endpoint=True
+                        )
+
+                        df_plot = (
+                            df_line.reset_index()
+                            .melt("DIA", var_name="Série", value_name="Valor")
+                        )
+
+                        chart = (
+                            alt.Chart(df_plot)
+                            .mark_line(point=True)
+                            .encode(
+                                x=alt.X("DIA:T", title="Dia"),
+                                y=alt.Y("Valor:Q", title="Quantidade acumulada"),
+                                color=alt.Color("Série:N", title=""),
+                                tooltip=[
+                                    alt.Tooltip("DIA:T", title="Dia"),
+                                    alt.Tooltip("Série:N", title="Série"),
+                                    alt.Tooltip("Valor:Q", title="Quantidade"),
+                                ],
                             )
-                            chart = chart + ponto_hoje
+                            .properties(height=320)
+                        )
 
-                    st.altair_chart(chart, use_container_width=True)
-                    st.caption(
-                        "Linha **Real** = indicador acumulado da equipe, parando no **dia de hoje** "
-                        "ou no último dia com movimento. "
-                        "Linha **Meta** = ritmo necessário até a **data final escolhida** "
-                        "para bater a meta da equipe."
-                    )
+                        st.altair_chart(chart, use_container_width=True)
+                        st.caption(
+                            "Linha **Real** = indicador acumulado da equipe **apenas dentro do intervalo escolhido**. "
+                            "Linha **Meta** = ritmo necessário, do início ao fim do intervalo, "
+                            "para atingir o total de análises/aprovações/vendas calculado com base nos últimos 3 meses."
+                        )

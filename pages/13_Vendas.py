@@ -42,6 +42,41 @@ def limpar_para_data(serie: pd.Series) -> pd.Series:
     return dt.dt.date
 
 
+def mes_ano_ptbr_para_date(texto: str):
+    """
+    Converte strings tipo 'novembro 2025' -> date(2025, 11, 1).
+    """
+    if not isinstance(texto, str):
+        return pd.NaT
+    t = texto.strip().lower()
+    partes = t.split()
+    if len(partes) != 2:
+        return pd.NaT
+    mes_nome, ano_str = partes
+    mapa = {
+        "janeiro": 1,
+        "fevereiro": 2,
+        "março": 3,
+        "marco": 3,
+        "abril": 4,
+        "maio": 5,
+        "junho": 6,
+        "julho": 7,
+        "agosto": 8,
+        "setembro": 9,
+        "outubro": 10,
+        "novembro": 11,
+        "dezembro": 12,
+    }
+    mes = mapa.get(mes_nome)
+    if not mes:
+        return pd.NaT
+    try:
+        return date(int(ano_str), mes, 1)
+    except Exception:
+        return pd.NaT
+
+
 @st.cache_data(ttl=60)
 def carregar_dados() -> pd.DataFrame:
     df = pd.read_csv(CSV_URL)
@@ -120,7 +155,7 @@ def carregar_dados() -> pd.DataFrame:
         # aprovado apenas quando for APROVAÇÃO
         df.loc[status_upper.str.contains(r"\bAPROVAÇÃO\b"), "STATUS_BASE"] = "APROVADO"
 
-    # OBSERVAÇÕES / VGV  (igual outras páginas)
+    # OBSERVAÇÕES / VGV
     if "OBSERVAÇÕES" in df.columns:
         df["OBSERVACOES_RAW"] = (
             df["OBSERVAÇÕES"].fillna("").astype(str).str.strip()
@@ -218,41 +253,61 @@ if df.empty:
 # Garante DIA como datetime para filtros
 df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
 
-dias_validos = df["DIA"].dropna()
-if dias_validos.empty:
-    hoje = date.today()
-    data_min = hoje - timedelta(days=30)
-    data_max = hoje
+# DATA BASE (mês comercial)
+if "DATA BASE" in df.columns:
+    df["DATA_BASE"] = df["DATA BASE"].astype(str).apply(mes_ano_ptbr_para_date)
+    df["DATA_BASE_LABEL"] = df["DATA_BASE"].apply(
+        lambda d: d.strftime("%m/%Y") if pd.notnull(d) else ""
+    )
 else:
-    data_min = dias_validos.min().date()
-    data_max = dias_validos.max().date()
+    df["DATA_BASE"] = df["DIA"].dt.date
+    df["DATA_BASE_LABEL"] = df["DIA"].dt.strftime("%m/%Y")
 
 # ---------------------------------------------------------
 # SIDEBAR – FILTROS GERAIS
 # ---------------------------------------------------------
 st.sidebar.header("Filtros")
 
-col_per1, col_per2 = st.sidebar.columns(2)
-with col_per1:
-    data_ini_mov = st.date_input(
-        "Data inicial (movimentação)",
-        value=max(data_min, data_max - timedelta(days=30)),
-        min_value=data_min,
-        max_value=data_max,
-        format="DD/MM/YYYY",
-    )
-with col_per2:
-    data_fim_mov = st.date_input(
-        "Data final (movimentação)",
-        value=data_max,
-        min_value=data_min,
-        max_value=data_max,
-        format="DD/MM/YYYY",
-    )
+# Filtro por DATA BASE (mês comercial)
+bases_validas = (
+    df[["DATA_BASE", "DATA_BASE_LABEL"]]
+    .dropna(subset=["DATA_BASE"])
+    .drop_duplicates()
+    .sort_values("DATA_BASE")
+)
+opcoes_bases = bases_validas["DATA_BASE_LABEL"].tolist()
 
-if data_ini_mov > data_fim_mov:
-    st.sidebar.error("Data inicial não pode ser maior que a data final.")
+if not opcoes_bases:
+    st.sidebar.error("Nenhuma DATA BASE encontrada na planilha.")
     st.stop()
+
+default_bases = opcoes_bases[-2:] if len(opcoes_bases) >= 2 else opcoes_bases
+
+bases_selecionadas = st.sidebar.multiselect(
+    "Período por DATA BASE (mês comercial)",
+    options=opcoes_bases,
+    default=default_bases,
+)
+
+if not bases_selecionadas:
+    bases_selecionadas = opcoes_bases
+
+mask_db = df["DATA_BASE_LABEL"].isin(bases_selecionadas)
+df_periodo = df[mask_db].copy()
+
+if df_periodo.empty:
+    st.info("Não há movimentações para as DATA BASE selecionadas.")
+    st.stop()
+
+# Depois de filtrar por DATA BASE, definimos intervalo real de dias (movimentação)
+dias_validos = df_periodo["DIA"].dropna()
+if dias_validos.empty:
+    hoje = date.today()
+    data_ini_mov = hoje - timedelta(days=30)
+    data_fim_mov = hoje
+else:
+    data_ini_mov = dias_validos.min().date()
+    data_fim_mov = dias_validos.max().date()
 
 # Tipo de venda considerada
 opcao_tipo_venda = st.sidebar.radio(
@@ -273,13 +328,13 @@ else:
 
 # Filtro por equipe / corretor
 lista_equipe = (
-    df["EQUIPE"].dropna().astype(str).sort_values().unique().tolist()
-    if "EQUIPE" in df.columns
+    df_periodo["EQUIPE"].dropna().astype(str).sort_values().unique().tolist()
+    if "EQUIPE" in df_periodo.columns
     else []
 )
 lista_corretor = (
-    df["CORRETOR"].dropna().astype(str).sort_values().unique().tolist()
-    if "CORRETOR" in df.columns
+    df_periodo["CORRETOR"].dropna().astype(str).sort_values().unique().tolist()
+    if "CORRETOR" in df_periodo.columns
     else []
 )
 
@@ -303,12 +358,7 @@ meta_vendas = st.sidebar.slider(
     step=1,
 )
 
-# ---------------------------------------------------------
-# APLICA FILTROS NO DATAFRAME (PLANILHA)
-# ---------------------------------------------------------
-mask_mov = (df["DIA"].dt.date >= data_ini_mov) & (df["DIA"].dt.date <= data_fim_mov)
-df_periodo = df[mask_mov].copy()
-
+# Aplica filtros de equipe/corretor
 if equipe_sel != "Todas":
     df_periodo = df_periodo[df_periodo["EQUIPE"] == equipe_sel]
 if corretor_sel != "Todos":
@@ -316,17 +366,30 @@ if corretor_sel != "Todos":
 
 registros_filtrados = len(df_periodo)
 
+if registros_filtrados == 0:
+    st.info("Não há movimentações para os filtros selecionados.")
+    st.stop()
+
+# Recalcula intervalo de dias após filtros de equipe/corretor
+dias_validos_pos = df_periodo["DIA"].dropna()
+if not dias_validos_pos.empty:
+    data_ini_mov = dias_validos_pos.min().date()
+    data_fim_mov = dias_validos_pos.max().date()
+
+# Texto da DATA BASE
+if len(bases_selecionadas) == 1:
+    txt_base = bases_selecionadas[0]
+else:
+    txt_base = f"{bases_selecionadas[0]} até {bases_selecionadas[-1]}"
+
 st.caption(
+    f"DATA BASE: **{txt_base}** • "
     f"Período (movimentação): **{data_ini_mov.strftime('%d/%m/%Y')}** até "
     f"**{data_fim_mov.strftime('%d/%m/%Y')}** • Registros na base: **{registros_filtrados}**"
     + (f" • Equipe: **{equipe_sel}**" if equipe_sel != "Todas" else "")
     + (f" • Corretor: **{corretor_sel}**" if corretor_sel != "Todos" else "")
     + f" • Tipo de venda considerada: **{desc_tipo_venda}**"
 )
-
-if df_periodo.empty:
-    st.info("Não há movimentações para o período/equipe/corretor selecionados.")
-    st.stop()
 
 # ---------------------------------------------------------
 # AGREGAÇÃO PRINCIPAL – VENDAS E KPIs
@@ -479,7 +542,7 @@ if df_vendas.empty:
     st.info("Ainda não há vendas no período selecionado.")
 else:
     # calendário completo do período selecionado
-    dr = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
+    dr = pd.dateRange = pd.date_range(start=data_ini_mov, end=data_fim_mov, freq="D")
     dias_periodo = [d.date() for d in dr]
 
     if len(dias_periodo) == 0:

@@ -1,4 +1,3 @@
-# v1.1 – Funil com regra DESISTIU
 import streamlit as st
 import pandas as pd
 import numpy as np

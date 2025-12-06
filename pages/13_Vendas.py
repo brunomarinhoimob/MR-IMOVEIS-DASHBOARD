@@ -649,13 +649,25 @@ st.markdown("## 🧱 Mix de Vendas por Construtora e Empreendimento")
 if df_vendas.empty:
     st.info("Ainda não há vendas para montar o mix.")
 else:
+    # 🔹 AGORA COM QTDE DE VENDAS + VGV POR CONSTRUTORA
     df_mix_constr = (
-        df_vendas.groupby("CONSTRUTORA_BASE")["VGV"].sum().reset_index()
+        df_vendas.groupby("CONSTRUTORA_BASE")
+        .agg(
+            QTDE_VENDAS=("VGV", "size"),
+            VGV=("VGV", "sum"),
+        )
+        .reset_index()
     )
     df_mix_constr = df_mix_constr.sort_values("VGV", ascending=False)
 
+    # 🔹 E QTDE DE VENDAS + VGV POR EMPREENDIMENTO
     df_mix_empre = (
-        df_vendas.groupby("EMPREENDIMENTO_BASE")["VGV"].sum().reset_index()
+        df_vendas.groupby("EMPREENDIMENTO_BASE")
+        .agg(
+            QTDE_VENDAS=("VGV", "size"),
+            VGV=("VGV", "sum"),
+        )
+        .reset_index()
     )
     df_mix_empre = df_mix_empre.sort_values("VGV", ascending=False)
 
@@ -716,8 +728,9 @@ else:
         }
     )
 
+    # 🔧 CORRIGIDO: pandas usa 'ascending', não 'descending'
     if "Data" in df_tab.columns:
-        df_tab = df_tab.sort_values("Data", descending=False)
+        df_tab = df_tab.sort_values("Data", ascending=False)
 
     st.dataframe(
         df_tab.style.format({"VGV": "R$ {:,.2f}".format}),

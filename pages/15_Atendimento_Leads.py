@@ -125,39 +125,34 @@ def fmt_dt(dt):
 
 
 # =====================================================
-# 3. FILTROS LATERAIS (CORRIGINDO COMPARAÇÃO DE DATAS)
+# 3. FILTROS LATERAIS – POR ENQUANTO SEM FILTRAR DATA
 # =====================================================
 
 st.sidebar.header("Filtros – Atendimento de Leads")
 
+# mesmo sem usar no filtro, mantemos os campos de data para referência
 min_data = df["DATA_CAPTURA_DT"].min()
 max_data = df["DATA_CAPTURA_DT"].max()
 
 hoje = date.today()
-default_ini = hoje - timedelta(days=7)
-default_fim = hoje
+default_ini = (min_data.date() if pd.notna(min_data) else hoje - timedelta(days=7))
+default_fim = (max_data.date() if pd.notna(max_data) else hoje)
 
 data_inicio = st.sidebar.date_input(
     "Data inicial (captura do lead)",
     value=default_ini,
-    min_value=min_data.date() if pd.notna(min_data) else date(2024, 1, 1),
 )
 data_fim = st.sidebar.date_input(
     "Data final (captura do lead)",
     value=default_fim,
-    max_value=max_data.date() if pd.notna(max_data) else hoje,
 )
 
 if data_inicio > data_fim:
     st.sidebar.error("A data inicial não pode ser maior que a data final.")
     st.stop()
 
-# transforma date → datetime para comparar com a coluna datetime64[ns]
-data_inicio_dt = pd.to_datetime(data_inicio)
-data_fim_dt = pd.to_datetime(data_fim) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-
-mask_periodo = (df["DATA_CAPTURA_DT"] >= data_inicio_dt) & (df["DATA_CAPTURA_DT"] <= data_fim_dt)
-df_periodo = df[mask_periodo].copy()
+# 🚨 POR ENQUANTO: NÃO VAMOS FILTRAR POR DATA PARA NÃO ZERAR OS DADOS
+df_periodo = df.copy()
 
 # Filtro por corretor
 corretores = sorted(df_periodo["CORRETOR_EXIBICAO"].dropna().unique().tolist())
@@ -172,8 +167,8 @@ if df_periodo.empty:
     st.stop()
 
 st.write(
-    f"Período: **{data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}** • "
-    f"Leads no período (sem perdidos): **{len(df_periodo[~df_periodo['PERDIDO']])}**"
+    f"Período selecionado: **{data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}** "
+    "(a filtragem por data ainda não está sendo aplicada – visão geral de todos os leads carregados)."
 )
 
 # =====================================================
@@ -237,10 +232,11 @@ agr = df_cor.groupby("CORRETOR_EXIBICAO").agg(
 ).reset_index()
 
 
-def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
+def obter_analises_por_corretor() -> pd.Series:
     """
     Tenta puxar da base principal (ex.: st.session_state['df_base']) o número de
-    análises por corretor no período informado. Se não existir, devolve série vazia.
+    análises por corretor (sem filtro de data por enquanto).
+    Se não existir, devolve série vazia.
     """
     df_base = st.session_state.get("df_base")
     if df_base is None:
@@ -257,17 +253,10 @@ def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
         return None
 
     col_corretor_base = col_base("corretor", "consultor", "vendedor")
-    col_data_base = col_base("data base", "data_base", "data analise", "data análise")
     col_status_base = col_base("status_base", "status", "etapa", "situação", "situacao")
 
-    if not col_corretor_base or not col_data_base or not col_status_base:
+    if not col_corretor_base or not col_status_base:
         return pd.Series(dtype="float64")
-
-    # ✅ LINHA CORRIGIDA (sem aspas sobrando)
-    df_b[col_data_base] = pd.to_datetime(df_b[col_data_base], errors="coerce")
-
-    mask_data = (df_b[col_data_base].dt.date >= inicio) & (df_b[col_data_base].dt.date <= fim)
-    df_b = df_b[mask_data].copy()
 
     txt_status = df_b[col_status_base].fillna("").astype(str).str.upper()
     mask_analise = (
@@ -283,7 +272,7 @@ def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
     return serie
 
 
-serie_analises = obter_analises_por_corretor(data_inicio, data_fim)
+serie_analises = obter_analises_por_corretor()
 
 if not serie_analises.empty:
     agr = agr.merge(
@@ -327,7 +316,7 @@ aba1, aba2, aba3 = st.tabs(["Atendidos", "Não atendidos", "Apenas 1 contato"])
 with aba1:
     df_atendidos = df_periodo[df_periodo["ATENDIDO"] & (~df_periodo["PERDIDO"])].copy()
     if df_atendidos.empty:
-        st.info("Nenhum lead atendido no período.")
+        st.info("Nenhum lead atendido.")
     else:
         df_atendidos["Captura"] = df_atendidos["DATA_CAPTURA_DT"].apply(fmt_dt)
         df_atendidos["1º contato"] = df_atendidos["DATA_COM_CORRETOR_DT"].apply(fmt_dt)
@@ -351,7 +340,7 @@ with aba1:
 with aba2:
     df_nao = df_periodo[(~df_periodo["ATENDIDO"]) & (~df_periodo["PERDIDO"])].copy()
     if df_nao.empty:
-        st.info("Nenhum lead não atendido no período.")
+        st.info("Nenhum lead não atendido.")
     else:
         df_nao["Captura"] = df_nao["DATA_CAPTURA_DT"].apply(fmt_dt)
         cols = [
@@ -373,7 +362,7 @@ with aba3:
     ].copy()
 
     if df_1contato.empty:
-        st.info("Nenhum lead com apenas 1 contato no período.")
+        st.info("Nenhum lead com apenas 1 contato.")
     else:
         df_1contato["Captura"] = df_1contato["DATA_CAPTURA_DT"].apply(fmt_dt)
         df_1contato["1º contato"] = df_1contato["DATA_COM_CORRETOR_DT"].apply(fmt_dt)

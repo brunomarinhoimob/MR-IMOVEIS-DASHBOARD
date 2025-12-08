@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime, date, timedelta
 
 # =====================================================
-# 1. ACESSO AO DF DE LEADS (VINDO DO app_dashboard)
+# 1. CONFIG E ACESSO AO DF DE LEADS (VINDO DO app_dashboard)
 # =====================================================
 
 st.set_page_config(page_title="Atendimento de Leads", page_icon="📞", layout="wide")
@@ -125,7 +125,7 @@ def fmt_dt(dt):
 
 
 # =====================================================
-# 3. FILTROS LATERAIS
+# 3. FILTROS LATERAIS (CORRIGINDO COMPARAÇÃO DE DATAS)
 # =====================================================
 
 st.sidebar.header("Filtros – Atendimento de Leads")
@@ -134,23 +134,29 @@ min_data = df["DATA_CAPTURA_DT"].min()
 max_data = df["DATA_CAPTURA_DT"].max()
 
 hoje = date.today()
-default_ini = (hoje - timedelta(days=7))
+default_ini = hoje - timedelta(days=7)
 default_fim = hoje
 
 data_inicio = st.sidebar.date_input(
-    "Data inicial (captura do lead)", value=default_ini, min_value=min_data.date() if pd.notna(min_data) else date(2024, 1, 1)
+    "Data inicial (captura do lead)",
+    value=default_ini,
+    min_value=min_data.date() if pd.notna(min_data) else date(2024, 1, 1),
 )
 data_fim = st.sidebar.date_input(
-    "Data final (captura do lead)", value=default_fim, max_value=max_data.date() if pd.notna(max_data) else hoje
+    "Data final (captura do lead)",
+    value=default_fim,
+    max_value=max_data.date() if pd.notna(max_data) else hoje,
 )
 
 if data_inicio > data_fim:
     st.sidebar.error("A data inicial não pode ser maior que a data final.")
     st.stop()
 
-mask_periodo = (df["DATA_CAPTURA_DT"].dt.date >= data_inicio) & (
-    df["DATA_CAPTURA_DT"].dt.date <= data_fim
-)
+# transforma date → datetime para comparar com a coluna datetime64[ns]
+data_inicio_dt = pd.to_datetime(data_inicio)
+data_fim_dt = pd.to_datetime(data_fim) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+
+mask_periodo = (df["DATA_CAPTURA_DT"] >= data_inicio_dt) & (df["DATA_CAPTURA_DT"] <= data_fim_dt)
 df_periodo = df[mask_periodo].copy()
 
 # Filtro por corretor
@@ -171,7 +177,7 @@ st.write(
 )
 
 # =====================================================
-# 4. KPIs GERAIS (TROCANDO SLA → TEMPO DE ATENDIMENTO)
+# 4. KPIs GERAIS (TUDO COMO ATENDIMENTO)
 # =====================================================
 
 leads_no_periodo = len(df_periodo)
@@ -188,7 +194,7 @@ mask_novos = (~df_periodo["PERDIDO"]) & (~df_periodo["ATENDIDO"])
 df_leads_novos = df_periodo[mask_novos].copy()
 qtd_leads_novos = len(df_leads_novos)
 
-# % atendidos em até 15 min (mede a eficiência do atendimento)
+# % atendidos em até 15 min
 mask_ate15 = (df_periodo["ATENDIDO"]) & (df_periodo["TEMPO_ATEND_MIN"] <= 15)
 qtd_ate15 = mask_ate15.sum()
 perc_ate15 = (qtd_ate15 / leads_atendidos * 100) if leads_atendidos > 0 else 0
@@ -210,20 +216,19 @@ if qtd_leads_novos > 0:
     df_tmp = df_leads_novos.copy()
     if "DATA_CAPTURA_DT" in df_tmp.columns:
         df_tmp["Data captura"] = df_tmp["DATA_CAPTURA_DT"].apply(fmt_dt)
+        cols_exibir = [c for c in cols_exibir if c != "DATA_CAPTURA_DT"] + ["Data captura"]
     st.dataframe(df_tmp[cols_exibir], use_container_width=True)
 else:
     st.button("↑ Nenhum lead novo", disabled=True)
 
 # =====================================================
-# 5. RESUMO GERAL POR CORRETOR (COM RANKING + ANÁLISES)
+# 5. RESUMO GERAL POR CORRETOR (RANK + ANÁLISES)
 # =====================================================
 
 st.markdown("## 👥 Resumo geral por corretor")
 
-# Base para resumo por corretor
 df_cor = df_periodo.copy()
 
-# Tempo de atendimento e interações médios por corretor
 agr = df_cor.groupby("CORRETOR_EXIBICAO").agg(
     LEADS_PERIODO=("NOME_LEAD", "count"),
     LEADS_ATENDIDOS=("ATENDIDO", "sum"),
@@ -231,24 +236,16 @@ agr = df_cor.groupby("CORRETOR_EXIBICAO").agg(
     TEMPO_MEDIO_INTERACOES_MIN=("TEMPO_INTERACOES_MIN", "mean"),
 ).reset_index()
 
-# -----------------------------------------------------
-# PUXANDO ANÁLISES DO app_dashboard (se existir df_base)
-# -----------------------------------------------------
-
 def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
     """
     Tenta puxar da base principal (ex.: st.session_state['df_base']) o número de
-    análises por corretor no período informado.
-    Se não encontrar a base, devolve zeros.
+    análises por corretor no período informado. Se não existir, devolve série vazia.
     """
     df_base = st.session_state.get("df_base")
     if df_base is None:
-        # ainda não conectado ao app_dashboard – devolve série vazia
         return pd.Series(dtype="float64")
 
     df_b = df_base.copy()
-
-    # Tenta descobrir colunas padrão da base:
     cols_lower = {c.lower(): c for c in df_b.columns}
 
     def col_base(*names):
@@ -265,20 +262,23 @@ def obter_analises_por_corretor(inicio: date, fim: date) -> pd.Series:
     if not col_corretor_base or not col_data_base or not col_status_base:
         return pd.Series(dtype="float64")
 
-    df_b[col_data_base] = pd.to_datetime(df_b[col_data_base], errors="coerce")
+    df_b[col_data_base] = pd.to_datetime(df_b[col_data_base"], errors="coerce")
 
     mask_data = (df_b[col_data_base].dt.date >= inicio) & (df_b[col_data_base].dt.date <= fim)
     df_b = df_b[mask_data].copy()
 
-    # Considera como "análise" registros em status EM ANÁLISE / REANÁLISE
     txt_status = df_b[col_status_base].fillna("").astype(str).str.upper()
-    mask_analise = txt_status.str.contains("EM ANÁLISE") | txt_status.str.contains("REANÁLISE") | txt_status.str.contains("ANALISE")
+    mask_analise = (
+        txt_status.str.contains("EM ANÁLISE")
+        | txt_status.str.contains("REANÁLISE")
+        | txt_status.str.contains("ANALISE")
+        | txt_status.str.contains("ANÁLISE")
+    )
     df_b = df_b[mask_analise]
 
     serie = df_b.groupby(col_corretor_base)[col_status_base].count()
     serie.name = "ANALISES_PERIODO"
     return serie
-
 
 serie_analises = obter_analises_por_corretor(data_inicio, data_fim)
 
@@ -291,11 +291,9 @@ if not serie_analises.empty:
 else:
     agr["ANALISES_PERIODO"] = 0
 
-# Ranking por quantidade de leads no período
 agr = agr.sort_values(by="LEADS_PERIODO", ascending=False).reset_index(drop=True)
 agr["RANK_LEADS"] = agr.index + 1
 
-# Formatação de tempos
 agr["Tempo médio atendimento"] = agr["TEMPO_MEDIO_ATEND_MIN"].apply(format_minutes)
 agr["Tempo médio entre interações"] = agr["TEMPO_MEDIO_INTERACOES_MIN"].apply(format_minutes)
 
@@ -323,7 +321,6 @@ st.markdown("## 📂 Detalhamento dos leads")
 
 aba1, aba2, aba3 = st.tabs(["Atendidos", "Não atendidos", "Apenas 1 contato"])
 
-# ATENDIDOS
 with aba1:
     df_atendidos = df_periodo[df_periodo["ATENDIDO"] & (~df_periodo["PERDIDO"])].copy()
     if df_atendidos.empty:
@@ -348,7 +345,6 @@ with aba1:
         cols = [c for c in cols if c in df_atendidos.columns]
         st.dataframe(df_atendidos[cols], use_container_width=True)
 
-# NÃO ATENDIDOS
 with aba2:
     df_nao = df_periodo[(~df_periodo["ATENDIDO"]) & (~df_periodo["PERDIDO"])].copy()
     if df_nao.empty:
@@ -366,14 +362,11 @@ with aba2:
         cols = [c for c in cols if c in df_nao.columns]
         st.dataframe(df_nao[cols], use_container_width=True)
 
-# APENAS 1 CONTATO (ATIVO)
 with aba3:
-    df_1contato = df_periodo.copy()
-    # Atendidos, não perdidos, mas com apenas 1 interação (sem data de última interação diferente do 1º contato)
-    df_1contato = df_1contato[
-        (df_1contato["ATENDIDO"])
-        & (~df_1contato["PERDIDO"])
-        & (df_1contato["DATA_ULT_INTERACAO_DT"].isna())
+    df_1contato = df_periodo[
+        (df_periodo["ATENDIDO"])
+        & (~df_periodo["PERDIDO"])
+        & (df_periodo["DATA_ULT_INTERACAO_DT"].isna())
     ].copy()
 
     if df_1contato.empty:

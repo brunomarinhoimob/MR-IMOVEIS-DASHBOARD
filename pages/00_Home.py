@@ -1,14 +1,28 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 
 # ----------------------------------------------------
-# CONFIGURAÇÃO (DEIXAR A CONFIG PRINCIPAL NO app.py!)
+# CAMINHO DA LOGO (ROBUSTO)
+# ----------------------------------------------------
+# __file__ -> .../SEU_REPO/pages/00_Home.py
+# parent   -> .../SEU_REPO/pages
+# parent.parent -> .../SEU_REPO
+# logo em: .../SEU_REPO/app_dashboard/logo_mr.png
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+LOGO_PATH = PROJECT_ROOT / "app_dashboard" / "logo_mr.png"
+
+# Se sua logo estiver direto na raiz do projeto (ex.: /logo_mr.png),
+# comente a linha de cima e descomente esta:
+# LOGO_PATH = PROJECT_ROOT / "logo_mr.png"
+
+# ----------------------------------------------------
+# ESTILOS VISUAIS
 # ----------------------------------------------------
 st.markdown(
     """
     <style>
-        /* Centralizar tudo */
         .centered {
             display: flex;
             flex-direction: column;
@@ -17,35 +31,33 @@ st.markdown(
             text-align: center;
         }
 
-        /* Card principal */
         .card {
             background-color: #111111;
-            padding: 60px 40px;
+            padding: 55px 40px;
             border-radius: 28px;
-            width: 80%;
+            width: 82%;
             max-width: 650px;
             box-shadow: 0px 0px 25px rgba(0,0,0,0.45);
         }
 
-        /* Frase com fonte menor */
-        .phrase {
-            font-size: 22px;
-            color: #e8e8e8;
-            font-weight: 500;
-            margin-top: 20px;
-            line-height: 1.3;
+        .logo {
+            width: 260px;
+            margin-bottom: 20px;
         }
 
-        /* Infos do mês e atualização */
+        .phrase {
+            font-size: 20px;      /* frase menor pra destacar a logo */
+            color: #e8e8e8;
+            font-weight: 500;
+            margin-top: 10px;
+            line-height: 1.35;
+        }
+
         .info {
             margin-top: 35px;
             font-size: 16px;
             color: #cfcfcf;
-        }
-
-        .logo {
-            width: 260px;
-            margin-bottom: 15px;
+            line-height: 1.6;
         }
     </style>
     """,
@@ -53,22 +65,16 @@ st.markdown(
 )
 
 # ----------------------------------------------------
-# CARREGAR PLANILHA E OBTER O MÊS COMERCIAL
+# FUNÇÃO PARA BUSCAR MÊS COMERCIAL REAL DA PLANILHA
 # ----------------------------------------------------
-
 def obter_mes_comercial():
     """
-    Retorna o mês comercial baseado na última data_base da planilha.
+    Pega a última data_base da planilha e converte para mês comercial.
     """
 
     try:
-        # 🔧 Ajustar o caminho da planilha aqui:
-        # df = pd.read_excel("app_dashboard/planilhas/base_vendas.xlsx")
-
-        # -------- Exemplo para simulação (REMOVER DEPOIS) --------
-        datas_exemplo = pd.DataFrame({"data_base": ["2025-12-03", "2025-12-05", "2025-12-01"]})
-        df = datas_exemplo
-        # ---------------------------------------------------------
+        # ⬇️ AJUSTE AQUI SE A PLANILHA ESTIVER EM OUTRO LOCAL
+        df = pd.read_excel(PROJECT_ROOT / "app_dashboard" / "planilhas" / "base_vendas.xlsx")
 
         df["data_base"] = pd.to_datetime(df["data_base"], errors="coerce")
         ultima_data = df["data_base"].max()
@@ -85,20 +91,22 @@ def obter_mes_comercial():
 mes_comercial = obter_mes_comercial()
 ultima_atualizacao = datetime.now().strftime("%d/%m/%Y • %H:%M")
 
-
 # ----------------------------------------------------
-# LAYOUT DA TELA HOME
+# LAYOUT DA HOME
 # ----------------------------------------------------
-
 st.markdown('<div class="centered">', unsafe_allow_html=True)
-
-# CARD
 st.markdown('<div class="card">', unsafe_allow_html=True)
 
-# LOGO
-st.image("app_dashboard/logo_mr.png", use_container_width=False, width=260)
+# LOGO MR (com try/except pra não quebrar o app se der ruim)
+try:
+    st.image(str(LOGO_PATH), use_container_width=False, width=260)
+except Exception:
+    st.markdown(
+        "<div class='phrase'><b>[Logo MR não encontrada no caminho configurado]</b></div>",
+        unsafe_allow_html=True,
+    )
 
-# FRASE DE IMPACTO – fonte menor
+# FRASE INSTITUCIONAL
 st.markdown(
     """
     <div class="phrase">
@@ -120,4 +128,4 @@ st.markdown(
 )
 
 st.markdown('</div>', unsafe_allow_html=True)  # fecha card
-st.markdown('</div>', unsafe_allow_html=True)  # fecha centrado
+st.markdown('</div>', unsafe_allow_html=True)  # fecha centered

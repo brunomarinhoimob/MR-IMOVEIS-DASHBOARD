@@ -277,7 +277,7 @@ if df_view.empty:
     st.stop()
 
 # ---------------------------------------------------------
-# IDENTIFICA A ÚLTIMA DATA BASE (ATUAL)
+# IDENTIFICA A ÚLTIMA DATA BASE (ATUAL) E LISTA DE BASES
 # ---------------------------------------------------------
 bases_validas = pd.to_datetime(df_view["DATA_BASE"], errors="coerce").dropna()
 if bases_validas.empty:
@@ -286,18 +286,50 @@ if bases_validas.empty:
 
 DATA_BASE_ATUAL = bases_validas.max()  # última data base real
 DATA_BASE_ATUAL_LABEL = DATA_BASE_ATUAL.strftime("%m/%Y")
-# ---------------------------------------------------------
-# 🔥 PAINEL 1 — FUNIL DA ÚLTIMA DATA BASE
-# ---------------------------------------------------------
-st.markdown(f"## 🟦 Funil da Última Data Base – {DATA_BASE_ATUAL_LABEL}")
 
-# Filtra df_view apenas para a última data base
-df_atual = df_view[
+# Lista de bases disponíveis para seletor do painel
+bases_unicas = sorted(bases_validas.unique())
+bases_labels = [pd.Timestamp(b).strftime("%m/%Y") for b in bases_unicas]
+
+# índice padrão = última data base
+idx_default_base = (
+    bases_labels.index(DATA_BASE_ATUAL_LABEL)
+    if DATA_BASE_ATUAL_LABEL in bases_labels
+    else len(bases_labels) - 1
+)
+
+# Seletor de DATA BASE que afeta SOMENTE o painel superior
+col_t1, col_t2 = st.columns([3, 1])
+with col_t2:
+    base_label_escolhida = st.selectbox(
+        "Data base (apenas este painel):",
+        options=bases_labels,
+        index=idx_default_base,
+    )
+
+# data base selecionada para o painel 1
+idx_sel = bases_labels.index(base_label_escolhida)
+DATA_BASE_PAINEL = pd.Timestamp(bases_unicas[idx_sel])
+DATA_BASE_PAINEL_LABEL = base_label_escolhida
+
+with col_t1:
+    st.markdown(f"## 🟦 Funil da Data Base – {DATA_BASE_PAINEL_LABEL}")
+
+# Dataframe da ÚLTIMA base real (para outros painéis)
+df_base_atual = df_view[
     pd.to_datetime(df_view["DATA_BASE"], errors="coerce") == DATA_BASE_ATUAL
 ].copy()
 
-if df_atual.empty:
-    st.warning("Não há movimentação na última data base para essa visão.")
+# ---------------------------------------------------------
+# 🔥 PAINEL 1 — FUNIL DA DATA BASE SELECIONADA
+# ---------------------------------------------------------
+# Filtra df_view apenas para a data base escolhida no seletor
+df_painel = df_view[
+    pd.to_datetime(df_view["DATA_BASE"], errors="coerce") == DATA_BASE_PAINEL
+].copy()
+
+if df_painel.empty:
+    st.warning("Não há movimentação na data base selecionada para essa visão.")
     # Mesmo assim exibir zeros para manter consistência
     analises_em = 0
     reanalises = 0
@@ -308,7 +340,7 @@ if df_atual.empty:
     ipc = 0
 else:
     # STATUS
-    status_atual = df_atual["STATUS_BASE"].fillna("").astype(str).str.upper()
+    status_atual = df_painel["STATUS_BASE"].fillna("").astype(str).str.upper()
 
     analises_em = conta_analises_base(status_atual)
     reanalises = conta_reanalises(status_atual)
@@ -317,7 +349,7 @@ else:
 
     # VENDAS ÚNICAS
     df_vendas_atual = obter_vendas_unicas(
-        df_atual,
+        df_painel,
         status_venda=["VENDA GERADA", "VENDA INFORMADA"],
         status_final_map=status_final_por_cliente
     )
@@ -329,11 +361,11 @@ else:
         # Um corretor só → IPC = vendas dele
         ipc = vendas
     else:
-        corretores_ativos = df_atual["CORRETOR"].dropna().astype(str).nunique()
+        corretores_ativos = df_painel["CORRETOR"].dropna().astype(str).nunique()
         ipc = (vendas / corretores_ativos) if corretores_ativos > 0 else 0
 
 # ---------------------------------------------------------
-# 🔥 LEADS DO CRM (corrigido + filtro 30 dias)
+# 🔥 LEADS DO CRM (apenas período da data base selecionada)
 # ---------------------------------------------------------
 
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
@@ -342,7 +374,7 @@ df_leads = st.session_state.get("df_leads", pd.DataFrame())
 hoje = pd.Timestamp.today().normalize()
 limite_30d = hoje - pd.Timedelta(days=30)
 
-# Corretores ativos pela planilha
+# Corretores ativos pela planilha (últimos 30 dias)
 df_planilha_30d = df_global[
     (pd.to_datetime(df_global["DIA"], errors="coerce") >= limite_30d)
 ]
@@ -383,7 +415,7 @@ if visao == "Corretor":
     # Se o corretor da visão estiver inativo, limpa a visão para evitar inconsistência
     if corretor_sel.upper() not in corretores_ativos_geral:
         st.warning("Este corretor não possui atividade nos últimos 30 dias.")
-        df_atual = df_atual.iloc[0:0]  # zera dataframe
+        df_painel = df_painel.iloc[0:0]  # zera dataframe
         total_leads = 0
         conv_leads_analise = 0
         leads_por_analise = 0
@@ -391,7 +423,7 @@ if visao == "Corretor":
         pass
 
 # ---------------------------------------------------------
-# FUNÇÃO CRM (CORRIGIDA)
+# FUNÇÃO CRM (LIMITADA À DATA BASE SELECIONADA)
 # ---------------------------------------------------------
 
 total_leads = None
@@ -454,9 +486,10 @@ if not df_leads.empty:
         df_leads_filtrado = df_leads_merge.copy()
 
     # -----------------------------------------------
-    # FILTRO PELO PERÍODO DA ÚLTIMA BASE
+    # FILTRO PELO PERÍODO DA DATA BASE SELECIONADA
+    # (usa df_painel)
     # -----------------------------------------------
-    dias_validos = df_atual["DIA"].dropna()
+    dias_validos = df_painel["DIA"].dropna()
     if not dias_validos.empty:
         dia_ini = dias_validos.min().date()
         dia_fim = dias_validos.max().date()
@@ -490,7 +523,7 @@ if not df_leads.empty:
 # ---------------------------------------------------------
 # EXIBIÇÃO DO PAINEL
 # ---------------------------------------------------------
-st.markdown("### 🔎 Indicadores principais da última data base")
+st.markdown("### 🔎 Indicadores principais da data base selecionada")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -517,7 +550,7 @@ with col9:
     st.metric("IPC (vendas/corretor)", f"{ipc:.2f}")
 
 # LEADS CRM
-st.markdown("### 📞 Leads CRM na última data base")
+st.markdown("### 📞 Leads CRM na data base selecionada")
 
 col10, col11, col12 = st.columns(3)
 with col10:
@@ -535,7 +568,7 @@ with col12:
 
 st.markdown("---")
 # ---------------------------------------------------------
-# 🔥 PAINEL 2 — HISTÓRICO DE 3 MESES
+# 🔥 PAINEL 2 — HISTÓRICO DE 3 MESES (sempre usando a ÚLTIMA BASE REAL)
 # ---------------------------------------------------------
 st.markdown(f"## 📊 Histórico dos Últimos 3 Meses (Base: {DATA_BASE_ATUAL_LABEL})")
 
@@ -644,7 +677,7 @@ else:
 
     st.markdown("---")
 
-   # ---------------------------------------------------------
+# ---------------------------------------------------------
 # 🔥 META X REAL (GRÁFICO ACUMULADO)
 # ---------------------------------------------------------
 st.markdown("## 📈 Acompanhamento da Meta — Meta x Real")
@@ -654,8 +687,8 @@ indicador = st.selectbox(
     ["Análises", "Aprovações", "Vendas"],
 )
 
-# Período do acompanhamento – por padrão, da última base
-dias_validos = df_atual["DIA"].dropna()
+# Período do acompanhamento – por padrão, da ÚLTIMA data base real
+dias_validos = df_base_atual["DIA"].dropna()
 if not dias_validos.empty:
     periodo_default = (dias_validos.min().date(), dias_validos.max().date())
 else:
@@ -759,4 +792,3 @@ else:
             "Meta = ritmo necessário, do início ao fim do intervalo, "
             "para atingir o total planejado."
         )
-

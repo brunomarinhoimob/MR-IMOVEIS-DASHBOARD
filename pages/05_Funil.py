@@ -373,7 +373,7 @@ else:
 
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
-# detectar corretores ativos (planilha + CRM) – ainda usado se precisar em outras regras
+# detectar corretores ativos (planilha + CRM) – se precisar em outras regras
 hoje = pd.Timestamp.today().normalize()
 limite_30d = hoje - pd.Timedelta(days=30)
 
@@ -561,20 +561,27 @@ with col12:
 
 st.markdown("---")
 # ---------------------------------------------------------
-# 🔥 PAINEL 2 — HISTÓRICO DE 3 MESES (sempre usando a ÚLTIMA BASE REAL)
+# 🔥 PAINEL 2 — HISTÓRICO DAS 3 ÚLTIMAS DATA BASE ANTERIORES
 # ---------------------------------------------------------
 st.markdown(f"## 📊 Histórico dos Últimos 3 Meses (Base: {DATA_BASE_ATUAL_LABEL})")
 
-# Determina janela de 3 meses
-DATA_BASE_INICIO_3M = DATA_BASE_ATUAL - pd.DateOffset(months=3)
+# Pega as 3 data base imediatamente anteriores à base atual
+bases_view = sorted(pd.to_datetime(df_view["DATA_BASE"], errors="coerce").dropna().unique())
+
+if DATA_BASE_ATUAL in bases_view:
+    idx_atual = bases_view.index(DATA_BASE_ATUAL)
+    idx_ini = max(0, idx_atual - 3)
+    # NÃO inclui a base atual, só as 3 anteriores
+    bases_hist = bases_view[idx_ini:idx_atual]
+else:
+    bases_hist = []
 
 df_3m = df_view[
-    (pd.to_datetime(df_view["DATA_BASE"], errors="coerce") >= DATA_BASE_INICIO_3M)
-    & (pd.to_datetime(df_view["DATA_BASE"], errors="coerce") <= DATA_BASE_ATUAL)
+    pd.to_datetime(df_view["DATA_BASE"], errors="coerce").isin(bases_hist)
 ].copy()
 
 if df_3m.empty:
-    st.info("Nenhum registro encontrado para os últimos 3 meses.")
+    st.info("Nenhum registro encontrado para as 3 últimas data base anteriores.")
 else:
     status_3m = df_3m["STATUS_BASE"].fillna("").astype(str).str.upper()
 
@@ -623,11 +630,11 @@ else:
 
     colH5, colH6, colH7 = st.columns(3)
     with colH5:
-        st.metric("VGV (3 meses)", format_currency(vgv_3m))
+        st.metric("VGV (3 bases)", format_currency(vgv_3m))
     with colH6:
-        st.metric("Corretores ativos (3m)", corretores_ativos_3m)
+        st.metric("Corretores ativos (3 bases)", corretores_ativos_3m)
     with colH7:
-        st.metric("IPC (3m)", f"{ipc_3m:.2f}")
+        st.metric("IPC (3 bases)", f"{ipc_3m:.2f}")
 
     colH8, colH9 = st.columns(2)
     with colH8:
@@ -640,13 +647,13 @@ else:
     # ---------------------------------------------------------
     # 🔥 PAINEL 3 — PLANEJAMENTO (META)
     # ---------------------------------------------------------
-    st.markdown("## 🎯 Planejamento com Base nos Últimos 3 Meses")
+    st.markdown("## 🎯 Planejamento com Base nas 3 Últimas Data Base")
 
-    # Meta sugerida = vendas_3m / 3 meses
+    # Meta sugerida = vendas_3m / 3 bases
     meta_sugerida = int(vendas_3m / 3) if vendas_3m > 0 else 3
 
     meta_vendas = st.number_input(
-        "Meta de vendas para o próximo período:",
+        "Meta de vendas (GERADAS) para o próximo período:",
         min_value=0,
         step=1,
         value=meta_sugerida
@@ -667,7 +674,7 @@ else:
     with colP3:
         st.metric("Aprovações Necessárias", aprovacoes_necessarias)
 
-    st.caption("Cálculos baseados no comportamento real do funil (considerando apenas VENDA GERADA) nos últimos 3 meses.")
+    st.caption("Cálculos baseados nas 3 últimas data base ANTERIORES à base atual, considerando apenas VENDA GERADA.")
 
     st.markdown("---")
 

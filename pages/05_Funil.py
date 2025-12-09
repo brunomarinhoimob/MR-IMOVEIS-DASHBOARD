@@ -71,12 +71,16 @@ def conta_aprovacoes(status: pd.Series) -> int:
 
 
 def obter_vendas_unicas(df_scope: pd.DataFrame, status_venda=None, status_final_map=None):
-    """1 venda por cliente. VENDA GERADA prevalece se houver VENDA INFORMADA."""
+    """
+    1 venda por cliente.
+    Se status_venda incluir VENDA GERADA e VENDA INFORMADA,
+    VENDA GERADA prevalece se houver as duas.
+    """
     if df_scope.empty:
         return df_scope.copy()
 
     if status_venda is None:
-        status_venda = ["VENDA GERADA", "VENDA INFORMADA"]
+        status_venda = ["VENDA GERADA"]
 
     s = df_scope["STATUS_BASE"].fillna("").astype(str).str.upper()
     df_v = df_scope[s.isin(status_venda)].copy()
@@ -346,10 +350,10 @@ else:
     analises_total = conta_analises_total(status_atual)
     aprovacoes = conta_aprovacoes(status_atual)
 
-    # VENDAS ÚNICAS
+    # VENDAS ÚNICAS (APENAS VENDA GERADA)
     df_vendas_atual = obter_vendas_unicas(
         df_painel,
-        status_venda=["VENDA GERADA", "VENDA INFORMADA"],
+        status_venda=["VENDA GERADA"],
         status_final_map=status_final_por_cliente
     )
     vendas = len(df_vendas_atual)
@@ -369,7 +373,7 @@ else:
 
 df_leads = st.session_state.get("df_leads", pd.DataFrame())
 
-# detectar corretores ativos (planilha + CRM) – ainda usado em outras lógicas se quiser
+# detectar corretores ativos (planilha + CRM) – ainda usado se precisar em outras regras
 hoje = pd.Timestamp.today().normalize()
 limite_30d = hoje - pd.Timedelta(days=30)
 
@@ -409,8 +413,7 @@ else:
 # Corretores realmente ativos (planilha OU CRM)
 corretores_ativos_geral = set(corretores_planilha_ativos) | set(corretores_crm_ativos)
 
-# ❌ Removido o filtro que escondia corretor inativo
-# Agora sempre mostramos, mesmo sem atividade
+# ❌ NÃO filtramos mais corretor inativo – sempre mostra os cards
 
 # ---------------------------------------------------------
 # FUNÇÃO CRM (LIMITADA À DATA BASE SELECIONADA)
@@ -434,10 +437,10 @@ if not df_leads.empty:
     # Nome do corretor padronizado
     df_leads_use["CORRETOR_KEY"] = (
         df_leads_use["nome_corretor"]
-            .fillna("")
-            .astype(str)
-            .str.upper()
-            .str.strip()
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
     )
 
     # Mapeamento equipe-corretor da planilha
@@ -527,7 +530,7 @@ col4, col5, col6 = st.columns(3)
 with col4:
     st.metric("Aprovações", aprovacoes)
 with col5:
-    st.metric("Vendas (únicas)", vendas)
+    st.metric("Vendas (únicas GERADAS)", vendas)
 with col6:
     st.metric("VGV Total", format_currency(vgv_total))
 
@@ -580,9 +583,10 @@ else:
     analises_total_3m = conta_analises_total(status_3m)
     aprovacoes_3m = conta_aprovacoes(status_3m)
 
+    # VENDAS ÚNICAS (APENAS GERADAS)
     df_vendas_3m = obter_vendas_unicas(
         df_3m,
-        status_venda=["VENDA GERADA", "VENDA INFORMADA"],
+        status_venda=["VENDA GERADA"],
         status_final_map=status_final_por_cliente
     )
     vendas_3m = len(df_vendas_3m)
@@ -615,7 +619,7 @@ else:
     with colH3:
         st.metric("Aprovações", aprovacoes_3m)
     with colH4:
-        st.metric("Vendas (únicas)", vendas_3m)
+        st.metric("Vendas (únicas GERADAS)", vendas_3m)
 
     colH5, colH6, colH7 = st.columns(3)
     with colH5:
@@ -657,13 +661,13 @@ else:
 
     colP1, colP2, colP3 = st.columns(3)
     with colP1:
-        st.metric("Meta de Vendas", meta_vendas)
+        st.metric("Meta de Vendas (GERADAS)", meta_vendas)
     with colP2:
         st.metric("Análises Necessárias", analises_necessarias)
     with colP3:
         st.metric("Aprovações Necessárias", aprovacoes_necessarias)
 
-    st.caption("Cálculos baseados no comportamento real do funil nos últimos 3 meses.")
+    st.caption("Cálculos baseados no comportamento real do funil (considerando apenas VENDA GERADA) nos últimos 3 meses.")
 
     st.markdown("---")
 
@@ -718,10 +722,10 @@ else:
         df_ind = df_range[status_base_upper == "APROVADO"].copy()
         total_meta = aprovacoes_necessarias
 
-    else:  # Vendas
+    else:  # Vendas (apenas GERADAS)
         df_ind = obter_vendas_unicas(
             df_range,
-            status_venda=["VENDA GERADA", "VENDA INFORMADA"],
+            status_venda=["VENDA GERADA"],
             status_final_map=status_final_por_cliente
         ).copy()
         total_meta = meta_vendas
@@ -780,5 +784,5 @@ else:
         st.caption(
             "Real = indicador acumulado. "
             "Meta = ritmo necessário, do início ao fim do intervalo, "
-            "para atingir o total planejado."
+            "para atingir o total planejado (considerando apenas VENDA GERADA)."
         )

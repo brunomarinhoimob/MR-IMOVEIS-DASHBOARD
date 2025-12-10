@@ -18,22 +18,14 @@ try:
 except Exception:
     pass
 
+st.title("🧑‍💼 Corretores – Visão Geral (somente corretores ativos no CRM)")
+st.caption(
+    "KPIs por corretor (análises, aprovações, vendas), leads recebidos, presença e dias sem ação."
+)
+
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES
 # ---------------------------------------------------------
-@st.cache_data
-def carregar_planilha_controle() -> pd.DataFrame:
-    """
-    Carrega a planilha de controle de processos (mesma base do app principal).
-    """
-    SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
-    GID = "1574157905"
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
-
-    df = pd.read_csv(url, dtype=str)
-    return df
-
-
 def limpar_data(serie: pd.Series) -> pd.Series:
     dt = pd.to_datetime(serie, errors="coerce", dayfirst=True)
     return dt.dt.date
@@ -46,7 +38,6 @@ def format_currency(valor: float) -> str:
 
 
 def format_cpf(cpf: str) -> str:
-    """Formata CPF no padrão 000.000.000-00, se possível."""
     if pd.isna(cpf):
         return "-"
     s = "".join(ch for ch in str(cpf) if ch.isdigit())
@@ -56,7 +47,7 @@ def format_cpf(cpf: str) -> str:
 
 
 # ---------------------------------------------------------
-# BASE PLANILHA (MESMA LÓGICA DO APP PRINCIPAL)
+# CARREGAR PLANILHA (MESMO LINK PRINCIPAL)
 # ---------------------------------------------------------
 SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
 GID = "1574157905"
@@ -64,11 +55,8 @@ URL_PLANILHA = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format
 
 try:
     df_planilha_raw = pd.read_csv(URL_PLANILHA, dtype=str)
-except Exception as e:
-    st.error(
-        "Erro ao carregar a planilha de controle de processos. "
-        "Verifique a conexão ou o link da planilha."
-    )
+except Exception:
+    st.error("Erro ao carregar a planilha de controle. Verifique o link/conexão.")
     st.stop()
 
 df_planilha = df_planilha_raw.copy()
@@ -78,7 +66,6 @@ map_cols = {
     "DATA BASE": ["DATA BASE", "DATA_BASE", "DT_BASE", "MES_BASE"],
     "DIA": ["DIA", "DATA", "DT_DIA", "DATA DIA"],
     "CORRETOR": ["CORRETOR", "NOME CORRETOR", "NOME_CORRETOR"],
-    # 👇 AQUI ESTAVA O PROBLEMA – AGORA ACEITA SITUAÇÃO TAMBÉM
     "STATUS": [
         "STATUS",
         "STATUS ATUAL",
@@ -191,13 +178,15 @@ status_final_por_cliente = status_final_por_cliente.rename(
 # ---------------------------------------------------------
 # BASE CRM – df_leads DO SESSION_STATE
 # ---------------------------------------------------------
-# Tenta pegar do session_state. Se não tiver, segue com DF vazio.
-df_leads_raw = st.session_state.get("df_leads", pd.DataFrame())
+# Tenta buscar o df_leads carregado na página principal.
+df_leads_raw = st.session_state.get("df_leads", None)
 
 if df_leads_raw is None or getattr(df_leads_raw, "empty", True):
+    # Se não tiver nada no session_state, segue com DataFrame vazio
     df_leads = pd.DataFrame()
 else:
     df_leads = df_leads_raw.copy()
+
 lower_cols = {c.lower(): c for c in df_leads.columns}
 
 
@@ -208,125 +197,168 @@ def get_col(possiveis):
     return None
 
 
-col_corretor_crm = get_col(["corretor", "nome_corretor", "usuario"])
-if not col_corretor_crm:
-    st.error("Não foi possível identificar a coluna de corretor nos dados do CRM.")
-    st.stop()
-
-df_leads["CORRETOR_CRM"] = (
-    df_leads[col_corretor_crm].fillna("SEM CORRETOR").astype(str).str.upper().str.strip()
-)
-
-col_data_captura = get_col(["data_captura", "data do lead", "data_lead"])
-if col_data_captura:
-    df_leads["DATA_CAPTURA_DT"] = pd.to_datetime(
-        df_leads[col_data_captura], errors="coerce"
-    )
+if df_leads.empty:
+    # Garante colunas esperadas mesmo sem dados
+    df_leads["CORRETOR_CRM"] = []
+    df_leads["DATA_CAPTURA_DT"] = pd.to_datetime([])
+    df_leads["DATA_COM_CORRETOR_DT"] = pd.to_datetime([])
+    df_leads["DATA_ULT_INTERACAO_DT"] = pd.to_datetime([])
+    df_leads["ULT_ATIVIDADE_CRM"] = pd.to_datetime([])
 else:
-    df_leads["DATA_CAPTURA_DT"] = pd.NaT
-
-col_data_com_corretor = get_col(["data_com_corretor", "data_primeiro_atendimento"])
-if col_data_com_corretor:
-    df_leads["DATA_COM_CORRETOR_DT"] = pd.to_datetime(
-        df_leads[col_data_com_corretor], errors="coerce"
+    # Corretor no CRM
+    col_corretor_crm = get_col(
+        [
+            "nome_corretor_norm",
+            "nome_corretor",
+            "corretor",
+            "responsavel",
+            "responsável",
+            "usuario_responsavel",
+            "usuario",
+        ]
     )
-else:
-    df_leads["DATA_COM_CORRETOR_DT"] = pd.NaT
 
-col_data_ult_inter = get_col(
-    ["data_ultima_interacao", "data_última_interacao", "data_ultima_atividade"]
-)
-if col_data_ult_inter:
-    df_leads["DATA_ULT_INTERACAO_DT"] = pd.to_datetime(
-        df_leads[col_data_ult_inter], errors="coerce"
+    if not col_corretor_crm:
+        st.error("Não foi possível identificar a coluna de corretor nos dados do CRM.")
+        st.stop()
+
+    df_leads["CORRETOR_CRM"] = (
+        df_leads[col_corretor_crm]
+        .fillna("SEM CORRETOR")
+        .astype(str)
+        .str.upper()
+        .str.strip()
     )
-else:
-    df_leads["DATA_ULT_INTERACAO_DT"] = pd.NaT
 
-df_leads["ULT_ATIVIDADE_CRM"] = df_leads[
-    ["DATA_CAPTURA_DT", "DATA_COM_CORRETOR_DT", "DATA_ULT_INTERACAO_DT"]
-].max(axis=1)
-df_leads["ULT_ATIVIDADE_CRM"] = pd.to_datetime(
-    df_leads["ULT_ATIVIDADE_CRM"], errors="coerce"
-)
+    # Datas
+    col_data_captura = get_col(["data_captura", "data do lead", "data_lead"])
+    if col_data_captura:
+        df_leads["DATA_CAPTURA_DT"] = pd.to_datetime(
+            df_leads[col_data_captura], errors="coerce"
+        )
+    else:
+        df_leads["DATA_CAPTURA_DT"] = pd.NaT
+
+    col_data_com_corretor = get_col(
+        ["data_com_corretor", "data_primeiro_atendimento"]
+    )
+    if col_data_com_corretor:
+        df_leads["DATA_COM_CORRETOR_DT"] = pd.to_datetime(
+            df_leads[col_data_com_corretor], errors="coerce"
+        )
+    else:
+        df_leads["DATA_COM_CORRETOR_DT"] = pd.NaT
+
+    col_data_ult_inter = get_col(
+        [
+            "data_ultima_interacao",
+            "data_última_interacao",
+            "data_ultima_atividade",
+        ]
+    )
+    if col_data_ult_inter:
+        df_leads["DATA_ULT_INTERACAO_DT"] = pd.to_datetime(
+            df_leads[col_data_ult_inter], errors="coerce"
+        )
+    else:
+        df_leads["DATA_ULT_INTERACAO_DT"] = pd.NaT
+
+    # Última atividade no CRM
+    df_leads["ULT_ATIVIDADE_CRM"] = df_leads[
+        ["DATA_CAPTURA_DT", "DATA_COM_CORRETOR_DT", "DATA_ULT_INTERACAO_DT"]
+    ].max(axis=1)
+    df_leads["ULT_ATIVIDADE_CRM"] = pd.to_datetime(
+        df_leads["ULT_ATIVIDADE_CRM"], errors="coerce"
+    )
 
 # ---------------------------------------------------------
-# SIDEBAR - PARAMETROS GERAIS
+# FILTROS (PERÍODO E TIPO DE VENDA)
 # ---------------------------------------------------------
-st.sidebar.header("⚙️ Filtros gerais")
+st.sidebar.title("Filtros – Corretores")
+
+dias_validos = df_planilha["DIA"].dropna()
+
+# Se não houver nenhuma data válida, usa hoje como fallback
+if dias_validos.empty:
+    data_min = date.today() - timedelta(days=30)
+    data_max = date.today()
+else:
+    data_min = dias_validos.min()
+    data_max = dias_validos.max()
+
+default_ini = max(data_min, data_max - timedelta(days=30))
+
+periodo = st.sidebar.date_input(
+    "Período (base: DIA da planilha)",
+    value=(default_ini, data_max),
+    min_value=data_min,
+    max_value=data_max,
+)
+
+if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
+    data_ini, data_fim = periodo
+else:
+    data_ini = periodo
+    data_fim = periodo
 
 tipo_venda = st.sidebar.radio(
-    "Qual tipo de venda considerar?",
-    ["GERADAS + INFORMADAS", "Apenas GERADAS", "Apenas INFORMADAS"],
+    "Tipo de vendas para KPIs",
+    options=[
+        "GERADAS + INFORMADAS",
+        "Apenas GERADAS",
+        "Apenas INFORMADAS",
+    ],
     index=0,
-    help=(
-        "• GERADAS + INFORMADAS: considera qualquer venda gerada ou informada.\n"
-        "• Apenas GERADAS: só conta vendas com status 'VENDA GERADA'.\n"
-        "• Apenas INFORMADAS: só conta vendas com status 'VENDA INFORMADA'."
-    ),
 )
 
-min_data_base = df_planilha["DATA_BASE"].min()
-max_data_base = df_planilha["DATA_BASE"].max()
-
-data_base_ini, data_base_fim = st.sidebar.date_input(
-    "Período de DATA BASE (planilha)",
-    value=(min_data_base, max_data_base),
-    min_value=min_data_base,
-    max_value=max_data_base,
+st.caption(
+    f"Período selecionado: **{data_ini.strftime('%d/%m/%Y')}** até **{data_fim.strftime('%d/%m/%Y')}**"
 )
 
-if isinstance(data_base_ini, tuple) or isinstance(data_base_ini, list):
-    data_base_ini, data_base_fim = data_base_ini
+# Corretores ativos no CRM (base inicial)
+corretores_ativos_crm = (
+    df_leads["CORRETOR_CRM"]
+    .dropna()
+    .astype(str)
+    .str.upper()
+    .replace("", "SEM CORRETOR")
+    .unique()
+)
+corretores_ativos = sorted(
+    [c for c in corretores_ativos_crm if c not in ["SEM CORRETOR"]]
+)
 
-if data_base_ini > data_base_fim:
-    st.sidebar.error("A data inicial não pode ser maior que a data final.")
+# Se por algum motivo não houver nenhum corretor no CRM, mostra aviso
+if not corretores_ativos:
+    st.warning("Nenhum corretor encontrado nos dados do CRM para o período.")
     st.stop()
 
-st.sidebar.markdown("---")
-
-dias_retroativos = st.sidebar.slider(
-    "Período (dias) para análise de movimento/presença",
-    min_value=7,
-    max_value=90,
-    value=30,
-)
-data_fim = date.today()
-data_ini = data_fim - timedelta(days=dias_retroativos - 1)
-
-st.sidebar.caption(
-    f"Presença e últimas atividades avaliadas de {data_ini.strftime('%d/%m/%Y')} "
-    f"até {data_fim.strftime('%d/%m/%Y')}."
-)
-
 # ---------------------------------------------------------
-# FILTRO DE PLANILHA POR DATA BASE
+# KPIs POR CORRETOR (PLANILHA)
 # ---------------------------------------------------------
-mask_base = (df_planilha["DATA_BASE"] >= data_base_ini) & (
-    df_planilha["DATA_BASE"] <= data_base_fim
-)
-df_plan_base = df_planilha[mask_base].copy()
+mask_periodo = (df_planilha["DIA"] >= data_ini) & (df_planilha["DIA"] <= data_fim)
+df_periodo = df_planilha[mask_periodo].copy()
 
-# ---------------------------------------------------------
-# 1) KPIs POR CORRETOR (PLANILHA)
-# ---------------------------------------------------------
-df_kpis_plan = df_plan_base.copy()
+# Garante apenas corretores ativos
+df_periodo = df_periodo[df_periodo["CORRETOR"].isin(corretores_ativos)]
 
-mask_analise = df_kpis_plan["STATUS_BASE"].isin(["ANÁLISE", "EM ANÁLISE", "REANÁLISE"])
-df_analises = df_kpis_plan[mask_analise].groupby("CORRETOR", as_index=False).size()
+# Análises (EM ANÁLISE + REANÁLISE)
+mask_analise = df_periodo["STATUS_BASE"].isin(["ANÁLISE", "EM ANÁLISE", "REANÁLISE"])
+df_analises = df_periodo[mask_analise].groupby("CORRETOR", as_index=False).size()
 df_analises = df_analises.rename(columns={"size": "ANALISES"})
 
-df_aprov = df_kpis_plan[df_kpis_plan["STATUS_BASE"] == "APROVADO"].groupby(
+df_aprov = df_periodo[df_periodo["STATUS_BASE"] == "APROVADO"].groupby(
     "CORRETOR", as_index=False
 ).size()
 df_aprov = df_aprov.rename(columns={"size": "APROVACOES"})
 
-df_reprov = df_kpis_plan[df_kpis_plan["STATUS_BASE"] == "REPROVADO"].groupby(
+df_reprov = df_periodo[df_periodo["STATUS_BASE"] == "REPROVADO"].groupby(
     "CORRETOR", as_index=False
 ).size()
 df_reprov = df_reprov.rename(columns={"size": "REPROVACOES"})
 
-df_vendas_ref = df_plan_base.copy()
+# VENDAS (respeitando regra do STATUS FINAL != DESISTIU)
+df_vendas_ref = df_periodo.copy()
 df_vendas_ref["CHAVE_CLIENTE"] = (
     df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
     + " | "
@@ -369,8 +401,9 @@ df_vendas_cor = (
     .agg(VENDAS=("VALOR_IMOVEL_BASE", "size"), VGV=("VALOR_IMOVEL_BASE", "sum"))
 )
 
+# Monta base de KPIs da planilha
 df_kpis_plan = (
-    df_kpis_plan[["CORRETOR"]]
+    df_periodo[["CORRETOR"]]
     .drop_duplicates()
     .merge(df_analises, on="CORRETOR", how="left")
     .merge(df_aprov, on="CORRETOR", how="left")
@@ -407,21 +440,25 @@ df_kpis_plan["TAXA_VENDA_APROV"] = np.where(
 )
 
 # ---------------------------------------------------------
-# 2) LEADS POR CORRETOR (CRM)
+# LEADS POR CORRETOR (CRM)
 # ---------------------------------------------------------
-mask_crm_periodo = (df_leads["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
-    df_leads["DATA_CAPTURA_DT"].dt.date <= data_fim
-)
-df_leads_periodo = df_leads[mask_crm_periodo].copy()
-
-df_leads_count = (
-    df_leads_periodo.groupby("CORRETOR_CRM", as_index=False).size().rename(
-        columns={"CORRETOR_CRM": "CORRETOR", "size": "LEADS"}
+if df_leads.empty:
+    df_leads_periodo = df_leads.copy()
+    df_leads_count = pd.DataFrame(columns=["CORRETOR", "LEADS"])
+else:
+    mask_crm_periodo = (df_leads["DATA_CAPTURA_DT"].dt.date >= data_ini) & (
+        df_leads["DATA_CAPTURA_DT"].dt.date <= data_fim
     )
-)
+    df_leads_periodo = df_leads[mask_crm_periodo].copy()
+
+    df_leads_count = (
+        df_leads_periodo.groupby("CORRETOR_CRM", as_index=False)
+        .size()
+        .rename(columns={"CORRETOR_CRM": "CORRETOR", "size": "LEADS"})
+    )
 
 # ---------------------------------------------------------
-# 3) ÚLTIMO MOVIMENTO (PLANILHA + CRM)
+# ÚLTIMO MOVIMENTO (PLANILHA + CRM)
 # ---------------------------------------------------------
 df_ult_plan = (
     df_planilha.dropna(subset=["DIA"])
@@ -431,13 +468,16 @@ df_ult_plan = (
     .rename(columns={"DIA": "ULTIMO_PLANILHA"})
 )
 
-df_ult_crm = (
-    df_leads.dropna(subset=["ULT_ATIVIDADE_CRM"])
-    .sort_values("ULT_ATIVIDADE_CRM")
-    .groupby("CORRETOR_CRM", as_index=False)["ULT_ATIVIDADE_CRM"]
-    .last()
-    .rename(columns={"CORRETOR_CRM": "CORRETOR", "ULT_ATIVIDADE_CRM": "ULTIMO_CRM"})
-)
+if df_leads.empty:
+    df_ult_crm = pd.DataFrame(columns=["CORRETOR", "ULTIMO_CRM"])
+else:
+    df_ult_crm = (
+        df_leads.dropna(subset=["ULT_ATIVIDADE_CRM"])
+        .sort_values("ULT_ATIVIDADE_CRM")
+        .groupby("CORRETOR_CRM", as_index=False)["ULT_ATIVIDADE_CRM"]
+        .last()
+        .rename(columns={"CORRETOR_CRM": "CORRETOR", "ULT_ATIVIDADE_CRM": "ULTIMO_CRM"})
+    )
 
 df_ult_mov = df_ult_plan.merge(df_ult_crm, on="CORRETOR", how="outer")
 df_ult_mov["ULTIMO_PLANILHA"] = pd.to_datetime(
@@ -450,15 +490,14 @@ df_ult_mov["ULTIMO_MOVIMENTO"] = df_ult_mov[
 ].max(axis=1)
 
 hoje = date.today()
-df_ult_mov["DIAS_SEM_MOV"] = (hoje - df_ult_mov["ULTIMO_MOVIMENTO"].dt.date).dt.days
+df_ult_mov["DIAS_SEM_MOV"] = (
+    hoje - df_ult_mov["ULTIMO_MOVIMENTO"].dt.date
+).dt.days
 
 # ---------------------------------------------------------
-# 4) PRESENÇA / DIAS COM AÇÃO (PLANILHA + CRM)
+# PRESENÇA / DIAS COM AÇÃO
 # ---------------------------------------------------------
-corretores_ativos = sorted(
-    set(df_kpis_plan["CORRETOR"].unique().tolist())
-    | set(df_leads["CORRETOR_CRM"].unique().tolist())
-)
+corretores_ativos = sorted(df_kpis_plan["CORRETOR"].unique().tolist())
 
 df_plan_pres = df_planilha[
     df_planilha["CORRETOR"].isin(corretores_ativos)
@@ -520,147 +559,12 @@ df_faltas["PRESENCA_PCT"] = np.where(
 )
 
 # ---------------------------------------------------------
-# 4.1) BASE CORRETORES – DADOS PESSOAIS (API)
-# ---------------------------------------------------------
-df_cor_api_raw = st.session_state.get("df_corretores_api", pd.DataFrame())
-
-if df_cor_api_raw is not None and not df_cor_api_raw.empty:
-    df_cor_api = df_cor_api_raw.copy()
-    df_cor_api.columns = [c.lower().strip() for c in df_cor_api.columns]
-
-    def _get_col_cor(possiveis):
-        for nome in possiveis:
-            if nome in df_cor_api.columns:
-                return nome
-        return None
-
-    col_nome_cor = _get_col_cor(["nome", "nome_corretor"])
-    if col_nome_cor:
-        df_cor_api["CORRETOR"] = (
-            df_cor_api[col_nome_cor]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df_cor_api["CORRETOR"] = ""
-
-    col_cpf_cor = _get_col_cor(["cpf_cnpj", "cpf", "documento"])
-    if col_cpf_cor:
-        df_cor_api["CPF_CORRETOR"] = (
-            df_cor_api[col_cpf_cor]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-    else:
-        df_cor_api["CPF_CORRETOR"] = ""
-
-    col_email_cor = _get_col_cor(["email"])
-    if col_email_cor:
-        df_cor_api["EMAIL_CORRETOR"] = (
-            df_cor_api[col_email_cor].fillna("").astype(str).str.strip()
-        )
-    else:
-        df_cor_api["EMAIL_CORRETOR"] = ""
-
-    col_ddd = _get_col_cor(["ddd", "ddi", "ddd_telefone"])
-    col_tel = _get_col_cor(["telefone", "telefone_celular", "celular"])
-    if col_tel:
-        ddd_series = (
-            df_cor_api[col_ddd].fillna("").astype(str).str.strip()
-            if col_ddd
-            else ""
-        )
-        tel_series = df_cor_api[col_tel].fillna("").astype(str).str.strip()
-        df_cor_api["TELEFONE_CORRETOR"] = (
-            ddd_series.where(ddd_series == "", ddd_series + " ") + tel_series
-        ).str.strip()
-    else:
-        df_cor_api["TELEFONE_CORRETOR"] = ""
-
-    col_creci_cor = _get_col_cor(["creci"])
-    if col_creci_cor:
-        df_cor_api["CRECI_CORRETOR"] = (
-            df_cor_api[col_creci_cor].fillna("").astype(str).str.strip()
-        )
-    else:
-        df_cor_api["CRECI_CORRETOR"] = ""
-
-    col_aniv_cor = _get_col_cor(["aniversario", "data_nascimento", "nascimento"])
-    if col_aniv_cor:
-        df_cor_api["ANIVERSARIO_CORRETOR"] = pd.to_datetime(
-            df_cor_api[col_aniv_cor], errors="coerce"
-        ).dt.date
-    else:
-        df_cor_api["ANIVERSARIO_CORRETOR"] = pd.NaT
-
-    col_status_cor = _get_col_cor(["status"])
-    if col_status_cor:
-        def _map_status(v):
-            try:
-                vi = int(v)
-                return "ATIVO" if vi == 1 else "INATIVO"
-            except Exception:
-                return str(v).upper() if pd.notna(v) else ""
-
-        df_cor_api["STATUS_CORRETOR"] = df_cor_api[col_status_cor].apply(_map_status)
-    else:
-        df_cor_api["STATUS_CORRETOR"] = ""
-
-    for flag, novo in [
-        ("fl_notificacoes_email", "NOTIF_EMAIL"),
-        ("fl_notificacoes_whatsapp", "NOTIF_WHATSAPP"),
-        ("fl_notificacoes_push", "NOTIF_PUSH"),
-    ]:
-        col_flag = _get_col_cor([flag])
-        if col_flag:
-            df_cor_api[novo] = df_cor_api[col_flag].apply(
-                lambda x: "Sim" if str(x) in ["1", "True", "true"] else "Não"
-            )
-        else:
-            df_cor_api[novo] = ""
-
-    cols_keep = [
-        "CORRETOR",
-        "CPF_CORRETOR",
-        "EMAIL_CORRETOR",
-        "TELEFONE_CORRETOR",
-        "CRECI_CORRETOR",
-        "ANIVERSARIO_CORRETOR",
-        "STATUS_CORRETOR",
-        "NOTIF_EMAIL",
-        "NOTIF_WHATSAPP",
-        "NOTIF_PUSH",
-    ]
-    df_cor_api = df_cor_api[
-        [c for c in cols_keep if c in df_cor_api.columns]
-    ].drop_duplicates(subset=["CORRETOR"])
-else:
-    df_cor_api = pd.DataFrame(
-        columns=[
-            "CORRETOR",
-            "CPF_CORRETOR",
-            "EMAIL_CORRETOR",
-            "TELEFONE_CORRETOR",
-            "CRECI_CORRETOR",
-            "ANIVERSARIO_CORRETOR",
-            "STATUS_CORRETOR",
-            "NOTIF_EMAIL",
-            "NOTIF_WHATSAPP",
-            "NOTIF_PUSH",
-        ]
-    )
-
-# ---------------------------------------------------------
-# 5) TABELA FINAL CONSOLIDADA POR CORRETOR
+# TABELA FINAL POR CORRETOR
 # ---------------------------------------------------------
 df_base = pd.DataFrame({"CORRETOR": corretores_ativos})
 
 df_base = (
-    df_base
-    .merge(df_kpis_plan, on="CORRETOR", how="left")
+    df_base.merge(df_kpis_plan, on="CORRETOR", how="left")
     .merge(df_leads_count, on="CORRETOR", how="left")
     .merge(
         df_ult_mov[["CORRETOR", "ULTIMO_MOVIMENTO", "DIAS_SEM_MOV"]],
@@ -674,7 +578,6 @@ df_base = (
         on="CORRETOR",
         how="left",
     )
-    .merge(df_cor_api, on="CORRETOR", how="left")
 )
 
 for col in [
@@ -693,12 +596,14 @@ df_base["VGV"] = df_base["VGV"].fillna(0.0)
 df_base["TICKET_MEDIO"] = df_base["TICKET_MEDIO"].fillna(0.0)
 df_base["PRESENCA_PCT"] = df_base["PRESENCA_PCT"].fillna(0.0)
 
+# Remove quem está há mais de 30 dias sem movimento total
 df_base = df_base[
     (df_base["DIAS_SEM_MOV"].isna()) | (df_base["DIAS_SEM_MOV"] <= 30)
 ].reset_index(drop=True)
 
-corretores_final = sorted(df_base["CORRETOR"].unique().tolist())
-
+# ---------------------------------------------------------
+# EXIBIÇÃO
+# ---------------------------------------------------------
 df_exibe = df_base.copy()
 df_exibe = df_exibe.rename(columns={"FALTAS": "Dias sem ação"})
 
@@ -717,21 +622,6 @@ df_exibe["Presença (%)"] = df_exibe["PRESENCA_PCT"].apply(
     lambda x: f"{x:.1f}%"
 )
 
-if "ANIVERSARIO_CORRETOR" in df_exibe.columns:
-    df_exibe["Aniversário"] = df_exibe["ANIVERSARIO_CORRETOR"].apply(
-        lambda d: d.strftime("%d/%m") if pd.notna(d) else "-"
-    )
-if "CPF_CORRETOR" in df_exibe.columns:
-    df_exibe["CPF"] = df_exibe["CPF_CORRETOR"].apply(format_cpf)
-if "EMAIL_CORRETOR" in df_exibe.columns:
-    df_exibe["E-mail"] = df_exibe["EMAIL_CORRETOR"]
-if "TELEFONE_CORRETOR" in df_exibe.columns:
-    df_exibe["Telefone"] = df_exibe["TELEFONE_CORRETOR"]
-if "CRECI_CORRETOR" in df_exibe.columns:
-    df_exibe["CRECI"] = df_exibe["CRECI_CORRETOR"]
-if "STATUS_CORRETOR" in df_exibe.columns:
-    df_exibe["Status CRM"] = df_exibe["STATUS_CORRETOR"]
-
 df_exibe["Último movimento"] = df_exibe["ULTIMO_MOVIMENTO"].apply(
     lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-"
 )
@@ -741,12 +631,6 @@ df_exibe["Dias sem movimento"] = df_exibe["DIAS_SEM_MOV"].apply(
 
 colunas_ordem = [
     "CORRETOR",
-    "CPF",
-    "E-mail",
-    "Telefone",
-    "CRECI",
-    "Aniversário",
-    "Status CRM",
     "LEADS",
     "ANALISES",
     "APROVACOES",
@@ -764,48 +648,24 @@ colunas_ordem = [
     "Dias sem movimento",
 ]
 colunas_ordem = [c for c in colunas_ordem if c in df_exibe.columns]
-
 df_exibe = df_exibe[colunas_ordem].sort_values("CORRETOR")
 
-st.title("🧑‍💼 Corretores – Visão Geral")
-
-st.markdown(
-    """
-Este painel mostra **indicadores completos dos corretores**:
-
-- 📊 Análises, aprovações, reprovações, vendas e VGV (planilha)
-- 📥 Leads recebidos (CRM)
-- 🕒 Último movimento (planilha + CRM)
-- 📆 Presença (dias com ação) e **dias sem ação**
-- 🧾 Dados pessoais do corretor (CPF, telefone, e-mail, CRECI, aniversário, status e notificações)
-"""
-)
-
-st.markdown("### 1️⃣ Tabela consolidada por corretor")
-
-st.dataframe(
-    df_exibe,
-    use_container_width=True,
-    hide_index=True,
-)
+st.markdown("### 📊 Tabela consolidada por corretor (somente ativos no CRM)")
+st.dataframe(df_exibe, use_container_width=True, hide_index=True)
 
 st.markdown("---")
-
-st.markdown("### 2️⃣ Visão individual por corretor")
+st.markdown("### 🔍 Visão individual")
 
 corretor_sel = st.selectbox(
-    "Corretor (visão individual)",
-    options=["Todos"] + corretores_final,
+    "Selecione um corretor",
+    options=["Todos"] + sorted(df_base["CORRETOR"].unique().tolist()),
 )
 
 if corretor_sel != "Todos" and corretor_sel in df_base["CORRETOR"].values:
-    st.markdown("---")
-    st.subheader(f"6️⃣ Visão individual – {corretor_sel}")
-
     linha = df_base[df_base["CORRETOR"] == corretor_sel].iloc[0]
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Leads recebidos", int(linha.get("LEADS", 0)))
+    c1.metric("Leads", int(linha.get("LEADS", 0)))
     c2.metric("Análises", int(linha.get("ANALISES", 0)))
     c3.metric("Aprovações", int(linha.get("APROVACOES", 0)))
     c4.metric("Vendas", int(linha.get("VENDAS", 0)))
@@ -833,8 +693,8 @@ if corretor_sel != "Todos" and corretor_sel in df_base["CORRETOR"].values:
     )
 
     c11, c12, c13 = st.columns(3)
-    ult_mov = linha.get("ULTIMO_MOVIMENTO", pd.NaT)
-    dias_sem = linha.get("DIAS_SEM_MOV", np.nan)
+    ult_mov = linha.get("ULTIMO_MOVIMENTO", None)
+    dias_sem = linha.get("DIAS_SEM_MOV", None)
     c11.metric(
         "Último movimento",
         ult_mov.strftime("%d/%m/%Y") if pd.notna(ult_mov) else "-",
@@ -847,38 +707,6 @@ if corretor_sel != "Todos" and corretor_sel in df_base["CORRETOR"].values:
         "Dias sem ação",
         int(linha.get("FALTAS", 0)),
     )
-
-    # Dados pessoais do corretor (CRM)
-    st.markdown("**Dados pessoais do corretor (CRM)**")
-    cpf_corr = linha.get("CPF_CORRETOR", None)
-    cpf_corr_fmt = format_cpf(cpf_corr) if cpf_corr not in [None, ""] else "-"
-    aniv_corr = linha.get("ANIVERSARIO_CORRETOR", None)
-    if isinstance(aniv_corr, (datetime, pd.Timestamp, date)):
-        aniv_corr_fmt = aniv_corr.strftime("%d/%m")
-    elif pd.notna(aniv_corr) if aniv_corr is not None else False:
-        try:
-            aniv_corr_fmt = pd.to_datetime(aniv_corr, errors="coerce").strftime("%d/%m")
-        except Exception:
-            aniv_corr_fmt = "-"
-    else:
-        aniv_corr_fmt = "-"
-
-    c14, c15, c16 = st.columns(3)
-    c14.metric("CPF", cpf_corr_fmt)
-    c15.metric("Telefone", linha.get("TELEFONE_CORRETOR", "-") or "-")
-    c16.metric("Aniversário", aniv_corr_fmt)
-
-    st.write(f"**E-mail:** {linha.get('EMAIL_CORRETOR', '-') or '-'}")
-    st.write(f"**CRECI:** {linha.get('CRECI_CORRETOR', '-') or '-'}")
-
-    notif_email = linha.get("NOTIF_EMAIL", "")
-    notif_whats = linha.get("NOTIF_WHATSAPP", "")
-    notif_push = linha.get("NOTIF_PUSH", "")
-    if any([notif_email, notif_whats, notif_push]):
-        st.write(
-            f"**Notificações CRM:** E-mail: {notif_email or '-'} | "
-            f"WhatsApp: {notif_whats or '-'} | Push: {notif_push or '-'}"
-        )
 
     st.info(
         "Movimento considera qualquer atividade na planilha (análises, vendas, etc.) "

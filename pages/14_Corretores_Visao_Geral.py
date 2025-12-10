@@ -373,7 +373,8 @@ if not status_final_por_cliente.empty:
     )
     df_vendas_ref = df_vendas_ref[df_vendas_ref["STATUS_FINAL_CLIENTE"] != "DESISTIU"]
 
-if not df_vendas_ref.empty:
+# 👉 Blinda para só ordenar se tiver coluna DIA e tiver linhas
+if (not df_vendas_ref.empty) and ("DIA" in df_vendas_ref.columns):
     df_vendas_ref = df_vendas_ref.sort_values("DIA")
     df_vendas_ref["CHAVE_CLIENTE"] = (
         df_vendas_ref["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
@@ -394,6 +395,7 @@ if not df_vendas_ref.empty:
 
     df_vendas_final = df_vendas_ult[mask_venda].copy()
 else:
+    # Se não tiver dados ou não tiver coluna DIA, segue com DF vazio
     df_vendas_final = df_vendas_ref.iloc[0:0].copy()
 
 df_vendas_cor = (

@@ -78,11 +78,27 @@ map_cols = {
     "DATA BASE": ["DATA BASE", "DATA_BASE", "DT_BASE", "MES_BASE"],
     "DIA": ["DIA", "DATA", "DT_DIA", "DATA DIA"],
     "CORRETOR": ["CORRETOR", "NOME CORRETOR", "NOME_CORRETOR"],
-    "STATUS": ["STATUS", "STATUS ATUAL", "STATUS_FINAL"],
+    # 👇 AQUI ESTAVA O PROBLEMA – AGORA ACEITA SITUAÇÃO TAMBÉM
+    "STATUS": [
+        "STATUS",
+        "STATUS ATUAL",
+        "STATUS_FINAL",
+        "SITUAÇÃO",
+        "SITUAÇÃO ATUAL",
+        "SITUACAO",
+        "SITUACAO ATUAL",
+    ],
     "NOME_CLIENTE": ["NOME CLIENTE", "NOME_CLIENTE", "CLIENTE"],
     "CPF_CLIENTE": ["CPF CLIENTE", "CPF_CLIENTE", "CPF"],
-    "VALOR_IMOVEL": ["VALOR IMOVEL", "VALOR_IMOVEL", "VALOR DO IMOVEL", "VLR_IMOVEL"],
+    "VALOR_IMOVEL": [
+        "VALOR IMOVEL",
+        "VALOR_IMOVEL",
+        "VALOR DO IMOVEL",
+        "VLR_IMOVEL",
+        "VGV",
+    ],
 }
+
 
 def achar_coluna(possiveis, df_cols):
     for nome in possiveis:
@@ -115,12 +131,16 @@ df_planilha["CORRETOR"] = (
 df_planilha["STATUS_BRUTO"] = df_planilha[col_status].fillna("").astype(str).str.upper()
 
 if col_nome_cliente:
-    df_planilha["NOME_CLIENTE_BASE"] = df_planilha[col_nome_cliente].fillna("").astype(str)
+    df_planilha["NOME_CLIENTE_BASE"] = df_planilha[col_nome_cliente].fillna("").astype(
+        str
+    )
 else:
     df_planilha["NOME_CLIENTE_BASE"] = ""
 
 if col_cpf_cliente:
-    df_planilha["CPF_CLIENTE_BASE"] = df_planilha[col_cpf_cliente].fillna("").astype(str)
+    df_planilha["CPF_CLIENTE_BASE"] = df_planilha[col_cpf_cliente].fillna("").astype(
+        str
+    )
 else:
     df_planilha["CPF_CLIENTE_BASE"] = ""
 
@@ -140,30 +160,26 @@ else:
 s = df_planilha["STATUS_BRUTO"]
 df_planilha["STATUS_BASE"] = ""
 
-df_planilha.loc[s.str.contains("ANÁLISE") | s.str.contains("ANALISE"), "STATUS_BASE"] = "ANÁLISE"
+df_planilha.loc[
+    s.str.contains("ANÁLISE") | s.str.contains("ANALISE"), "STATUS_BASE"
+] = "ANÁLISE"
 df_planilha.loc[s.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
 df_planilha.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-df_planilha.loc[s.str.contains("REANÁLISE") | s.str.contains("REANALISE"), "STATUS_BASE"] = "REANÁLISE"
 df_planilha.loc[
-    (df_planilha["STATUS_BASE"] == "")
-    & s.str.contains("ANÁLISE")
-    & ~s.str.contains("REANÁLISE")
-    & ~s.str.contains("REANALISE"),
-    "STATUS_BASE",
-] = "EM ANÁLISE"
+    s.str.contains("REANÁLISE") | s.str.contains("REANALISE"), "STATUS_BASE"
+] = "REANÁLISE"
 df_planilha.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
 df_planilha.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
 df_planilha.loc[s.str.contains("DESIST", na=False), "STATUS_BASE"] = "DESISTIU"
-
 df_planilha["STATUS_BASE"] = df_planilha["STATUS_BASE"].replace("", "OUTROS")
 
+# STATUS FINAL POR CLIENTE
 df_status_final = df_planilha.dropna(subset=["NOME_CLIENTE_BASE"]).copy()
 df_status_final["CHAVE_CLIENTE"] = (
     df_status_final["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
     + " | "
     + df_status_final["CPF_CLIENTE_BASE"].fillna("")
 )
-
 df_status_final = df_status_final.sort_values("DIA")
 status_final_por_cliente = df_status_final.groupby("CHAVE_CLIENTE", as_index=False)[
     ["DIA", "STATUS_BASE"]

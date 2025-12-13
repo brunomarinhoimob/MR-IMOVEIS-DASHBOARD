@@ -1,13 +1,20 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import date
 
-st.set_page_config(page_title="Funil de Leads", layout="wide")
+from app_dashboard import carregar_dados_planilha
+
+st.set_page_config(
+    page_title="Funil de Leads",
+    page_icon="📊",
+    layout="wide",
+)
+
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
-# =========================
-# FUNÇÕES
-# =========================
+# =====================================================
+# FUNÇÕES AUXILIARES
+# =====================================================
 
 def normalizar_nome(nome):
     if pd.isna(nome):
@@ -15,163 +22,194 @@ def normalizar_nome(nome):
     return " ".join(str(nome).upper().split())
 
 
-@st.cache_data(ttl=1800)
-def carregar_planilha():
-    caminho = "utils/dados_funil.csv"  # <- ARQUIVO LOCAL
+def calcular_taxa(a, b):
+    return f"{(a / b * 100):.1f}%" if b else "0%"
 
-    df = pd.read_csv(caminho, dtype=str)
+
+# =====================================================
+# CARGA DE DADOS (MESMA BASE DO CLIENTES MR)
+# =====================================================
+@st.cache_data(ttl=1800)
+def carregar_dados_funil():
+    df = carregar_dados_planilha()
     df.columns = [c.upper().strip() for c in df.columns]
 
-    df["NOME_CLIENTE"] = df["CLIENTE"].apply(normalizar_nome)
-    df["STATUS_BASE"] = df["SITUAÇÃO"].str.upper().str.strip()
-    df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
+    # DIA
+    if "DIA" in df:
+        df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
+    elif "DATA" in df:
+        df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
+    else:
+        df["DIA"] = pd.NaT
 
     df = df.dropna(subset=["DIA"])
+
+    # NOME CLIENTE
+    col_nome = next(
+        (c for c in ["CLIENTE", "NOME", "NOME CLIENTE", "NOME DO CLIENTE"] if c in df),
+        None,
+    )
+    if col_nome:
+        df["NOME_CLIENTE"] = df[col_nome].apply(normalizar_nome)
+    else:
+        df["NOME_CLIENTE"] = "NÃO INFORMADO"
+
+    # STATUS
+    col_status = next(
+        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL"] if c in df),
+        None,
+    )
+    if col_status:
+        df["STATUS_BASE"] = df[col_status].fillna("").astype(str).str.upper().str.strip()
+    else:
+        df["STATUS_BASE"] = ""
+
+    # CORRETOR / EQUIPE
+    df["CORRETOR"] = (
+        df.get("CORRETOR", "NÃO INFORMADO")
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    df["EQUIPE"] = (
+        df.get("EQUIPE", "NÃO INFORMADO")
+        .fillna("NÃO INFORMADO")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    # ORIGEM / CAMPANHA (já vêm do CRM cruzado no app_dashboard)
+    df["ORIGEM"] = (
+        df.get("ORIGEM", "SEM CADASTRO NO CRM")
+        .fillna("SEM CADASTRO NO CRM")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
     return df
 
 
-@st.cache_data(ttl=1800)
-def carregar_crm():
-    df = pd.read_json("teste_leads.json")
+df = carregar_dados_funil()
 
-    df["NOME_CLIENTE"] = df["nome_pessoa"].apply(normalizar_nome)
-    df["ORIGEM"] = df.get("nome_origem", "SEM ORIGEM").fillna("SEM ORIGEM").str.upper()
-    df["CAMPANHA"] = df.get("nome_campanha", "").fillna("").str.upper()
-    df["CORRETOR"] = df.get("nome_corretor", "SEM CORRETOR").fillna("SEM CORRETOR").str.upper()
-    df["EQUIPE"] = df.get("nome_equipe", "SEM EQUIPE").fillna("SEM EQUIPE").str.upper()
+# =====================================================
+# FILTROS
+# =====================================================
+st.subheader("🎛️ Filtros")
 
-    return df.tail(1000)
+c1, c2, c3 = st.columns(3)
 
+with c1:
+    data_inicio, data_fim = st.date_input(
+        "Período",
+        value=(df["DIA"].min().date(), df["DIA"].max().date()),
+        min_value=df["DIA"].min().date(),
+        max_value=df["DIA"].max().date(),
+    )
 
-# =========================
-# CARGA
-# =========================
+with c2:
+    equipes = ["TODAS"] + sorted(df["EQUIPE"].unique())
+    equipe_sel = st.selectbox("Equipe", equipes)
 
-df_plan = carregar_planilha()
-df_crm = carregar_crm()
+with c3:
+    corretores = ["TODOS"] + sorted(df["CORRETOR"].unique())
+    corretor_sel = st.selectbox("Corretor", corretores)
 
-# =========================
-# FILTRO DE DATA (SEGURO)
-# =========================
-
-data_inicio, data_fim = st.date_input(
-    "📅 Período",
-    value=(df_plan["DIA"].min().date(), df_plan["DIA"].max().date()),
-    min_value=df_plan["DIA"].min().date(),
-    max_value=df_plan["DIA"].max().date(),
-)
-
-df_plan = df_plan[
-    (df_plan["DIA"].dt.date >= data_inicio) &
-    (df_plan["DIA"].dt.date <= data_fim)
+df_f = df[
+    (df["DIA"].dt.date >= data_inicio) &
+    (df["DIA"].dt.date <= data_fim)
 ]
 
-# =========================
-# ÚLTIMO STATUS DO LEAD
-# =========================
+if equipe_sel != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe_sel]
 
-df_plan = df_plan.sort_values("DIA")
-df_plan = df_plan.groupby("NOME_CLIENTE", as_index=False).last()
+if corretor_sel != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor_sel]
 
-# =========================
-# MERGE CRM
-# =========================
+# =====================================================
+# ÚLTIMO STATUS POR CLIENTE
+# =====================================================
+df_f = df_f.sort_values("DIA")
+df_f = df_f.groupby("NOME_CLIENTE", as_index=False).last()
 
-df = df_plan.merge(
-    df_crm[["NOME_CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR", "EQUIPE"]],
-    on="NOME_CLIENTE",
-    how="left"
-)
-
-df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM")
-
-# =========================
+# =====================================================
 # KPIs MACRO
-# =========================
+# =====================================================
+st.markdown("## 📌 Status Atual do Funil")
 
-st.subheader("📌 Status Atual do Funil")
-
-cols = st.columns(4)
+col1, col2, col3, col4 = st.columns(4)
 
 def kpi(col, label, value):
     col.metric(label, int(value))
 
-kpi(cols[0], "Em Análise", (df["STATUS_BASE"] == "EM ANÁLISE").sum())
-kpi(cols[0], "Reanálise", (df["STATUS_BASE"] == "REANÁLISE").sum())
+kpi(col1, "Em Análise", (df_f["STATUS_BASE"] == "EM ANÁLISE").sum())
+kpi(col1, "Reanálise", (df_f["STATUS_BASE"] == "REANÁLISE").sum())
 
-kpi(cols[1], "Aprovados", (df["STATUS_BASE"] == "APROVAÇÃO").sum())
-kpi(cols[1], "Aprovados Bacen", (df["STATUS_BASE"] == "APROVADO BACEN").sum())
+kpi(col2, "Aprovados", (df_f["STATUS_BASE"] == "APROVAÇÃO").sum())
+kpi(col2, "Aprovados Bacen", (df_f["STATUS_BASE"] == "APROVADO BACEN").sum())
 
-kpi(cols[2], "Pendência", (df["STATUS_BASE"] == "PENDÊNCIA").sum())
-kpi(cols[2], "Reprovados", (df["STATUS_BASE"] == "REPROVAÇÃO").sum())
+kpi(col3, "Pendências", (df_f["STATUS_BASE"] == "PENDÊNCIA").sum())
+kpi(col3, "Reprovados", (df_f["STATUS_BASE"] == "REPROVAÇÃO").sum())
 
-kpi(cols[3], "Venda Gerada", (df["STATUS_BASE"] == "VENDA GERADA").sum())
-kpi(cols[3], "Venda Informada", (df["STATUS_BASE"] == "VENDA INFORMADA").sum())
+kpi(col4, "Vendas Geradas", (df_f["STATUS_BASE"] == "VENDA GERADA").sum())
+kpi(col4, "Vendas Informadas", (df_f["STATUS_BASE"] == "VENDA INFORMADA").sum())
 
 st.metric(
     "Leads Ativos no Funil",
-    df[~df["STATUS_BASE"].isin(["DESISTIU", "VENDA GERADA"])].shape[0]
+    df_f[~df_f["STATUS_BASE"].isin(["DESISTIU", "VENDA GERADA"])].shape[0],
 )
 
-# =========================
-# PERFORMANCE POR ORIGEM
-# =========================
-
+# =====================================================
+# PERFORMANCE POR ORIGEM + CONVERSÃO
+# =====================================================
 st.divider()
-st.subheader("📍 Performance por Origem")
+st.markdown("## 📍 Performance e Conversão por Origem")
 
-origens = ["TODAS"] + sorted(df["ORIGEM"].unique())
-origem = st.selectbox("Selecione a origem", origens)
+origens = ["TODAS"] + sorted(df_f["ORIGEM"].unique())
+origem_sel = st.selectbox("Origem", origens)
 
-df_f = df if origem == "TODAS" else df[df["ORIGEM"] == origem]
+df_o = df_f if origem_sel == "TODAS" else df_f[df_f["ORIGEM"] == origem_sel]
+
+leads = len(df_o)
+analises = (df_o["STATUS_BASE"] == "EM ANÁLISE").sum()
+aprov = df_o["STATUS_BASE"].isin(["APROVAÇÃO", "APROVADO BACEN"]).sum()
+vendas = df_o["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+
+cA, cB, cC, cD = st.columns(4)
+
+cA.metric("Leads", leads)
+cB.metric("Análises", analises)
+cC.metric("Aprovados", aprov)
+cD.metric("Vendas", vendas)
 
 c1, c2, c3, c4 = st.columns(4)
 
-kpi(c1, "Leads", len(df_f))
-kpi(c1, "Análises", (df_f["STATUS_BASE"] == "EM ANÁLISE").sum())
+c1.metric("Lead → Análise", calcular_taxa(analises, leads))
+c2.metric("Análise → Aprovação", calcular_taxa(aprov, analises))
+c3.metric("Análise → Venda", calcular_taxa(vendas, analises))
+c4.metric("Aprovação → Venda", calcular_taxa(vendas, aprov))
 
-kpi(c2, "Aprovados", (df_f["STATUS_BASE"] == "APROVAÇÃO").sum())
-kpi(c2, "Vendas Geradas", (df_f["STATUS_BASE"] == "VENDA GERADA").sum())
-
-kpi(c3, "Pendências", (df_f["STATUS_BASE"] == "PENDÊNCIA").sum())
-kpi(c3, "Reprovados", (df_f["STATUS_BASE"] == "REPROVAÇÃO").sum())
-
-kpi(c4, "Desistidos", (df_f["STATUS_BASE"] == "DESISTIU").sum())
-
-# =========================
-# CONVERSÃO
-# =========================
-
+# =====================================================
+# BUSCA DE CLIENTE (LINK CONCEITUAL COM CLIENTES MR)
+# =====================================================
 st.divider()
-st.subheader("📈 Conversões")
+st.markdown("## 🔎 Auditoria Rápida de Cliente")
 
-def taxa(a, b):
-    return f"{(a/b*100):.1f}%" if b else "0%"
+busca = st.text_input("Digite o nome do cliente")
 
-leads = len(df_f)
-analises = (df_f["STATUS_BASE"] == "EM ANÁLISE").sum()
-aprov = (df_f["STATUS_BASE"] == "APROVAÇÃO").sum()
-vendas = (df_f["STATUS_BASE"] == "VENDA GERADA").sum()
-
-x, y, z = st.columns(3)
-x.metric("Leads → Análise", taxa(analises, leads))
-y.metric("Análise → Aprovação", taxa(aprov, analises))
-z.metric("Aprovação → Venda", taxa(vendas, aprov))
-
-# =========================
-# AUDITORIA CLIENTE
-# =========================
-
-st.divider()
-st.subheader("🔎 Auditoria de Cliente")
-
-busca = st.text_input("Buscar cliente")
-
-if busca:
+if busca.strip():
     nome = normalizar_nome(busca)
-    df_cli = df[df["NOME_CLIENTE"].str.contains(nome)]
+    df_cli = df[df["NOME_CLIENTE"].str.contains(nome, na=False)]
 
     if df_cli.empty:
-        st.info("Cliente não encontrado.")
+        st.warning("Cliente não encontrado.")
     else:
-        st.dataframe(df_cli, use_container_width=True)
+        st.dataframe(
+            df_cli.sort_values("DIA"),
+            use_container_width=True,
+            hide_index=True,
+        )
+else:
+    st.info("Digite o nome acima para consultar um cliente.")

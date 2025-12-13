@@ -1,219 +1,131 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import datetime
 
-from app_dashboard import carregar_dados_planilha
+st.set_page_config(page_title="Funil de Leads", layout="wide")
 
-st.set_page_config(
-    page_title="Funil de Leads",
-    page_icon="📊",
-    layout="wide",
-)
+# =============================
+# CONFIG
+# =============================
+URL_PLANILHA = "COLE_AQUI_O_MESMO_LINK_DA_99_PAGINA_TESTE"
 
-st.title("📊 Funil de Leads – Origem, Status e Conversão")
+STATUS_ANALISE = "EM ANÁLISE"
+STATUS_APROVADO = "APROVAÇÃO"
+STATUS_APROVADO_BACEN = "APROVADO BACEN"
+STATUS_REANALISE = "REANÁLISE"
+STATUS_REPROVADO = "REPROVAÇÃO"
+STATUS_PENDENCIA = "PENDÊNCIA"
+STATUS_VENDA_GERADA = "VENDA GERADA"
+STATUS_VENDA_INFORMADA = "VENDA INFORMADA"
+STATUS_DESISTIU = "DESISTIU"
 
-# =====================================================
-# FUNÇÕES AUXILIARES
-# =====================================================
-
-def normalizar_nome(nome):
-    if pd.isna(nome):
-        return ""
-    return " ".join(str(nome).upper().split())
-
-
-def calcular_taxa(a, b):
-    return f"{(a / b * 100):.1f}%" if b else "0%"
-
-
-# =====================================================
-# CARGA DE DADOS (MESMA BASE DO CLIENTES MR)
-# =====================================================
+# =============================
+# LOAD
+# =============================
 @st.cache_data(ttl=1800)
-def carregar_dados_funil():
-    df = carregar_dados_planilha()
-    df.columns = [c.upper().strip() for c in df.columns]
+def carregar_dados():
+    df = pd.read_csv(URL_PLANILHA, dtype=str)
 
-    # DIA
-    if "DIA" in df.columns:
-        df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
-    elif "DATA" in df.columns:
-        df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
-    else:
-        df["DIA"] = pd.NaT
+    df.columns = df.columns.str.upper().str.strip()
 
-    df = df.dropna(subset=["DIA"])
+    df["CLIENTE"] = df["CLIENTE"].str.upper().str.strip()
+    df["SITUAÇÃO"] = df["SITUAÇÃO"].str.upper().str.strip()
 
-    # NOME CLIENTE
-    col_nome = next(
-        (c for c in ["CLIENTE", "NOME", "NOME CLIENTE", "NOME DO CLIENTE"] if c in df.columns),
-        None,
+    df["ORIGEM_FINAL"] = (
+        df.get("ORIGEM")
+        .fillna("SEM CADASTRO NO CRM")
+        .astype(str)
+        .str.upper()
+        .str.strip()
     )
-    if col_nome:
-        df["NOME_CLIENTE"] = df[col_nome].apply(normalizar_nome)
-    else:
-        df["NOME_CLIENTE"] = "NÃO INFORMADO"
 
-    # STATUS
-    col_status = next(
-        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL"] if c in df.columns),
-        None,
-    )
-    if col_status:
-        df["STATUS_BASE"] = (
-            df[col_status]
-            .fillna("")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df["STATUS_BASE"] = ""
-
-    # CORRETOR / EQUIPE
-    df["CORRETOR"] = (
-        df["CORRETOR"] if "CORRETOR" in df.columns else "NÃO INFORMADO"
-    )
-    df["CORRETOR"] = df["CORRETOR"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-
-    df["EQUIPE"] = (
-        df["EQUIPE"] if "EQUIPE" in df.columns else "NÃO INFORMADO"
-    )
-    df["EQUIPE"] = df["EQUIPE"].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-
-    # 🔥 CORREÇÃO DO ERRO (ORIGEM)
-    if "ORIGEM" not in df.columns:
-        df["ORIGEM"] = "SEM CADASTRO NO CRM"
-    else:
-        df["ORIGEM"] = (
-            df["ORIGEM"]
-            .fillna("SEM CADASTRO NO CRM")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
+    df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
 
     return df
 
+df = carregar_dados()
 
-df = carregar_dados_funil()
-
-# =====================================================
+# =============================
 # FILTROS
-# =====================================================
-st.subheader("🎛️ Filtros")
+# =============================
+st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
-c1, c2, c3 = st.columns(3)
+min_data = df["DATA"].min()
+max_data = df["DATA"].max()
 
-with c1:
-    data_inicio, data_fim = st.date_input(
-        "Período",
-        value=(df["DIA"].min().date(), df["DIA"].max().date()),
-        min_value=df["DIA"].min().date(),
-        max_value=df["DIA"].max().date(),
-    )
-
-with c2:
-    equipes = ["TODAS"] + sorted(df["EQUIPE"].unique())
-    equipe_sel = st.selectbox("Equipe", equipes)
-
-with c3:
-    corretores = ["TODOS"] + sorted(df["CORRETOR"].unique())
-    corretor_sel = st.selectbox("Corretor", corretores)
-
-df_f = df[
-    (df["DIA"].dt.date >= data_inicio) &
-    (df["DIA"].dt.date <= data_fim)
-]
-
-if equipe_sel != "TODAS":
-    df_f = df_f[df_f["EQUIPE"] == equipe_sel]
-
-if corretor_sel != "TODOS":
-    df_f = df_f[df_f["CORRETOR"] == corretor_sel]
-
-# =====================================================
-# ÚLTIMO STATUS POR CLIENTE
-# =====================================================
-df_f = df_f.sort_values("DIA")
-df_f = df_f.groupby("NOME_CLIENTE", as_index=False).last()
-
-# =====================================================
-# KPIs MACRO
-# =====================================================
-st.markdown("## 📌 Status Atual do Funil")
-
-col1, col2, col3, col4 = st.columns(4)
-
-def kpi(col, label, value):
-    col.metric(label, int(value))
-
-kpi(col1, "Em Análise", (df_f["STATUS_BASE"] == "EM ANÁLISE").sum())
-kpi(col1, "Reanálise", (df_f["STATUS_BASE"] == "REANÁLISE").sum())
-
-kpi(col2, "Aprovados", (df_f["STATUS_BASE"] == "APROVAÇÃO").sum())
-kpi(col2, "Aprovados Bacen", (df_f["STATUS_BASE"] == "APROVADO BACEN").sum())
-
-kpi(col3, "Pendências", (df_f["STATUS_BASE"] == "PENDÊNCIA").sum())
-kpi(col3, "Reprovados", (df_f["STATUS_BASE"] == "REPROVAÇÃO").sum())
-
-kpi(col4, "Vendas Geradas", (df_f["STATUS_BASE"] == "VENDA GERADA").sum())
-kpi(col4, "Vendas Informadas", (df_f["STATUS_BASE"] == "VENDA INFORMADA").sum())
-
-st.metric(
-    "Leads Ativos no Funil",
-    df_f[~df_f["STATUS_BASE"].isin(["DESISTIU", "VENDA GERADA"])].shape[0],
+data_ini, data_fim = st.date_input(
+    "Período",
+    value=(min_data.date(), max_data.date())
 )
 
-# =====================================================
-# PERFORMANCE POR ORIGEM + CONVERSÃO
-# =====================================================
-st.divider()
-st.markdown("## 📍 Performance e Conversão por Origem")
+df_filtro = df[
+    (df["DATA"] >= pd.to_datetime(data_ini)) &
+    (df["DATA"] <= pd.to_datetime(data_fim))
+]
 
-origens = ["TODAS"] + sorted(df_f["ORIGEM"].unique())
+origens = ["TODAS"] + sorted(df_filtro["ORIGEM_FINAL"].unique().tolist())
 origem_sel = st.selectbox("Origem", origens)
 
-df_o = df_f if origem_sel == "TODAS" else df_f[df_f["ORIGEM"] == origem_sel]
+if origem_sel != "TODAS":
+    df_filtro = df_filtro[df_filtro["ORIGEM_FINAL"] == origem_sel]
 
-leads = len(df_o)
-analises = (df_o["STATUS_BASE"] == "EM ANÁLISE").sum()
-aprov = df_o["STATUS_BASE"].isin(["APROVAÇÃO", "APROVADO BACEN"]).sum()
-vendas = df_o["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"]).sum()
+# =============================
+# KPIs MACRO (EVENTOS NO PERÍODO)
+# =============================
+leads_total = df_filtro["CLIENTE"].nunique()
 
-cA, cB, cC, cD = st.columns(4)
+analises = df_filtro[df_filtro["SITUAÇÃO"] == STATUS_ANALISE]["CLIENTE"].nunique()
+aprovados = df_filtro[df_filtro["SITUAÇÃO"] == STATUS_APROVADO]["CLIENTE"].nunique()
+vendas = df_filtro[
+    df_filtro["SITUAÇÃO"].isin([STATUS_VENDA_GERADA, STATUS_VENDA_INFORMADA])
+]["CLIENTE"].nunique()
 
-cA.metric("Leads", leads)
-cB.metric("Análises", analises)
-cC.metric("Aprovados", aprov)
-cD.metric("Vendas", vendas)
+# Conversões corretas
+conv_lead_analise = analises / leads_total if leads_total else 0
+conv_analise_aprov = aprovados / analises if analises else 0
+conv_analise_venda = vendas / analises if analises else 0
+conv_aprov_venda = vendas / aprovados if aprovados else 0
+
+# =============================
+# CARDS
+# =============================
+st.subheader("📌 Performance e Conversão")
 
 c1, c2, c3, c4 = st.columns(4)
+c1.metric("Leads", leads_total)
+c2.metric("Análises", analises)
+c3.metric("Aprovados", aprovados)
+c4.metric("Vendas", vendas)
 
-c1.metric("Lead → Análise", calcular_taxa(analises, leads))
-c2.metric("Análise → Aprovação", calcular_taxa(aprov, analises))
-c3.metric("Análise → Venda", calcular_taxa(vendas, analises))
-c4.metric("Aprovação → Venda", calcular_taxa(vendas, aprov))
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Lead → Análise", f"{conv_lead_analise:.1%}")
+c6.metric("Análise → Aprovação", f"{conv_analise_aprov:.1%}")
+c7.metric("Análise → Venda", f"{conv_analise_venda:.1%}")
+c8.metric("Aprovação → Venda", f"{conv_aprov_venda:.1%}")
 
-# =====================================================
-# BUSCA DE CLIENTE
-# =====================================================
+# =============================
+# AUDITORIA DE CLIENTE
+# =============================
 st.divider()
-st.markdown("## 🔎 Auditoria Rápida de Cliente")
+st.subheader("🔎 Auditoria Rápida de Cliente")
 
 busca = st.text_input("Digite o nome do cliente")
 
-if busca.strip():
-    nome = normalizar_nome(busca)
-    df_cli = df[df["NOME_CLIENTE"].str.contains(nome, na=False)]
+if busca:
+    hist = df[df["CLIENTE"].str.contains(busca.upper(), na=False)]
 
-    if df_cli.empty:
-        st.warning("Cliente não encontrado.")
-    else:
+    if not hist.empty:
+        cliente = hist.iloc[-1]
+
+        st.markdown(f"### 👤 {cliente['CLIENTE']}")
+        st.write(f"**Situação Atual:** {cliente['SITUAÇÃO']}")
+        st.write(f"**Corretor:** {cliente.get('CORRETOR')}")
+        st.write(f"**Origem:** {cliente['ORIGEM_FINAL']}")
+
+        st.subheader("Histórico")
         st.dataframe(
-            df_cli.sort_values("DIA"),
-            use_container_width=True,
-            hide_index=True,
+            hist.sort_values("DATA")[["DATA", "SITUAÇÃO", "OBSERVAÇÕES"]],
+            use_container_width=True
         )
-else:
-    st.info("Digite o nome acima para consultar um cliente.")
+    else:
+        st.warning("Cliente não encontrado.")

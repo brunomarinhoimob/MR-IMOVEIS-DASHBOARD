@@ -1,199 +1,164 @@
+# =========================================================
+# FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
+# =========================================================
+
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+import requests
+from datetime import date
 
-st.set_page_config(
-    page_title="Funil de Leads",
-    layout="wide"
-)
+from utils.supremo_config import TOKEN_SUPREMO
+
+st.set_page_config(page_title="Funil de Leads", page_icon="🎯", layout="wide")
+st.title("🎯 Funil de Leads – Origem, Status e Conversão")
 
 # =========================================================
-# CARGA DE DADOS (IDÊNTICA À 99_PAGINA_TESTE)
+# LINK OFICIAL DA PLANILHA (SEM INVENTAR)
 # =========================================================
-@st.cache_data(ttl=1800)
-def carregar_dados():
-    url = "COLE_AQUI_EXATAMENTE_O_MESMO_LINK_DA_99_PAGINA_TESTE"
-    df = pd.read_csv(url, dtype=str)
+SHEET_ID = "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+GID = "1574157905"
+CSV_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
+# =========================================================
+# FUNÇÕES
+# =========================================================
+@st.cache_data(ttl=300)
+def carregar_planilha():
+    df = pd.read_csv(CSV_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
 
-    df["CLIENTE"] = df["CLIENTE"].str.upper().str.strip()
-    df["CORRETOR"] = df["CORRETOR"].str.upper().str.strip()
-    df["EQUIPE"] = df["EQUIPE"].str.upper().str.strip()
-    df["SITUAÇÃO"] = df["SITUAÇÃO"].str.upper().str.strip()
+    df["DATA"] = pd.to_datetime(df["DATA"], dayfirst=True, errors="coerce")
+    df = df.dropna(subset=["DATA"])
 
-    df["ORIGEM_FINAL"] = (
-        df.get("ORIGEM")
-        .fillna("SEM CADASTRO NO CRM")
-        .astype(str)
-        .str.upper()
-        .str.strip()
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "DATA BASE", "SITUAÇÃO"]:
+        df[col] = df[col].astype(str).str.upper().str.strip()
+
+    # STATUS BASE
+    df["STATUS_BASE"] = ""
+    df.loc[df["SITUAÇÃO"].str.contains("EM ANÁLISE"), "STATUS_BASE"] = "ANALISE"
+    df.loc[df["SITUAÇÃO"].str.contains("REANÁLISE"), "STATUS_BASE"] = "REANALISE"
+    df.loc[df["SITUAÇÃO"].str.contains("APROVADO BACEN"), "STATUS_BASE"] = "APROVADO_BACEN"
+    df.loc[df["SITUAÇÃO"].str.contains("APROVADO"), "STATUS_BASE"] = "APROVADO"
+    df.loc[df["SITUAÇÃO"].str.contains("PEND"), "STATUS_BASE"] = "PENDENCIA"
+    df.loc[df["SITUAÇÃO"].str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
+    df.loc[df["SITUAÇÃO"].str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA_GERADA"
+    df.loc[df["SITUAÇÃO"].str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA_INFORMADA"
+    df.loc[df["SITUAÇÃO"].str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
+
+    df = df[df["STATUS_BASE"] != ""]
+
+    # REGRA: se existe VENDA GERADA, ignora VENDA INFORMADA
+    df = df.sort_values("DATA")
+    df["FLAG_VENDA_GERADA"] = df.groupby("CLIENTE")["STATUS_BASE"].transform(
+        lambda x: "VENDA_GERADA" in x.values
     )
+    df = df[~((df["FLAG_VENDA_GERADA"]) & (df["STATUS_BASE"] == "VENDA_INFORMADA"))]
 
-    df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
-
+    # ÚLTIMO STATUS DO LEAD
+    df = df.groupby("CLIENTE", as_index=False).last()
     return df
 
+@st.cache_data(ttl=600)
+def carregar_crm():
+    url = "https://api.supremocrm.com.br/v1/leads"
+    headers = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
-df = carregar_dados()
+    dados, pagina = [], 1
+    while len(dados) < 1000:
+        r = requests.get(url, headers=headers, params={"pagina": pagina}, timeout=15)
+        if r.status_code != 200:
+            break
+        js = r.json()
+        if not js.get("data"):
+            break
+        dados.extend(js["data"])
+        pagina += 1
+
+    df = pd.DataFrame(dados)
+    if df.empty:
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM"])
+
+    df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
+    df["ORIGEM"] = df.get("nome_origem", "SEM CRM").fillna("SEM CRM").str.upper().str.strip()
+    return df[["CLIENTE", "ORIGEM"]]
 
 # =========================================================
-# FILTROS GERAIS
+# CARGA
 # =========================================================
-st.title("📊 Funil de Leads – Origem, Status e Conversão")
+df_plan = carregar_planilha()
+df_crm = carregar_crm()
 
-col1, col2, col3, col4 = st.columns(4)
+df = df_plan.merge(df_crm, on="CLIENTE", how="left")
+df["ORIGEM"] = df["ORIGEM"].fillna("SEM CRM")
 
-with col1:
-    data_inicio, data_fim = st.date_input(
-        "Período (DATA)",
+# =========================================================
+# SIDEBAR – FILTROS
+# =========================================================
+st.sidebar.header("Filtros")
+
+modo = st.sidebar.radio("Tipo de período", ["DIA", "DATA BASE"])
+
+if modo == "DIA":
+    ini, fim = st.sidebar.date_input(
+        "Período",
         value=(df["DATA"].min().date(), df["DATA"].max().date())
     )
+    df = df[(df["DATA"].dt.date >= ini) & (df["DATA"].dt.date <= fim)]
+else:
+    bases = sorted(df["DATA BASE"].unique().tolist())
+    bases_sel = st.sidebar.multiselect("Data Base", bases, default=bases)
+    df = df[df["DATA BASE"].isin(bases_sel)]
 
-with col2:
-    datas_base = sorted(df["DATA BASE"].dropna().unique())
-    data_base_sel = st.multiselect("Data Base", datas_base, default=datas_base)
+equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df["EQUIPE"].unique()))
+if equipe != "TODAS":
+    df = df[df["EQUIPE"] == equipe]
 
-with col3:
-    equipes = ["TODAS"] + sorted(df["EQUIPE"].dropna().unique())
-    equipe_sel = st.selectbox("Equipe", equipes)
-
-with col4:
-    corretores = ["TODOS"] + sorted(df["CORRETOR"].dropna().unique())
-    corretor_sel = st.selectbox("Corretor", corretores)
-
-# Aplica filtros
-df_f = df[
-    (df["DATA"].dt.date >= data_inicio) &
-    (df["DATA"].dt.date <= data_fim) &
-    (df["DATA BASE"].isin(data_base_sel))
-]
-
-if equipe_sel != "TODAS":
-    df_f = df_f[df_f["EQUIPE"] == equipe_sel]
-
-if corretor_sel != "TODOS":
-    df_f = df_f[df_f["CORRETOR"] == corretor_sel]
-
-# =========================================================
-# FUNIL ATUAL (STATUS)
-# =========================================================
-st.markdown("---")
-st.subheader("📌 Status Atual do Funil")
-
-status_counts = df_f.groupby("SITUAÇÃO")["CLIENTE"].nunique()
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Em Análise", status_counts.get("EM ANÁLISE", 0))
-c2.metric("Reanálise", status_counts.get("REANÁLISE", 0))
-c3.metric("Aprovados", status_counts.get("APROVADO", 0))
-c4.metric("Aprovados Bacen", status_counts.get("APROVADO BACEN", 0))
-
-c5, c6, c7, c8 = st.columns(4)
-c5.metric("Pendências", status_counts.get("PENDÊNCIA", 0))
-c6.metric("Reprovados", status_counts.get("REPROVAÇÃO", 0))
-c7.metric("Vendas Informadas", status_counts.get("VENDA INFORMADA", 0))
-c8.metric("Vendas Geradas", status_counts.get("VENDA GERADA", 0))
-
-st.metric("Leads Ativos no Funil", df_f["CLIENTE"].nunique())
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df["CORRETOR"].unique()))
+if corretor != "TODOS":
+    df = df[df["CORRETOR"] == corretor]
 
 # =========================================================
 # PERFORMANCE POR ORIGEM
 # =========================================================
-st.markdown("---")
-st.subheader("🎯 Performance e Conversão por Origem")
+st.subheader("📊 Performance e Conversão por Origem")
 
-origens = ["TODAS"] + sorted(df_f["ORIGEM_FINAL"].unique())
-origem_sel = st.selectbox("Origem", origens)
+origem = st.selectbox("Origem", ["TODAS"] + sorted(df["ORIGEM"].unique()))
+df_o = df if origem == "TODAS" else df[df["ORIGEM"] == origem]
 
 tipo_venda = st.radio(
     "Tipo de Venda para Conversão",
-    ["Vendas Informadas + Geradas", "Apenas Vendas Geradas"]
+    ["Vendas Geradas + Informadas", "Apenas Vendas Geradas"]
 )
 
-df_o = df_f.copy()
-if origem_sel != "TODAS":
-    df_o = df_o[df_o["ORIGEM_FINAL"] == origem_sel]
-
-# Última atualização por lead
-df_o = (
-    df_o.sort_values("DATA")
-        .groupby("CLIENTE", as_index=False)
-        .last()
-)
-
-# Regra: venda gerada elimina venda informada
-df_o.loc[df_o["SITUAÇÃO"] == "VENDA GERADA", "SITUAÇÃO"] = "VENDA GERADA"
-
-leads = df_o["CLIENTE"].nunique()
-analises = df_o[df_o["SITUAÇÃO"] == "EM ANÁLISE"]["CLIENTE"].nunique()
-reanalis = df_o[df_o["SITUAÇÃO"] == "REANÁLISE"]["CLIENTE"].nunique()
+leads = len(df_o)
+analises = (df_o["STATUS_BASE"] == "ANALISE").sum()
+reanalises = (df_o["STATUS_BASE"] == "REANALISE").sum()
+aprovados = df_o["STATUS_BASE"].isin(["APROVADO", "APROVADO_BACEN"]).sum()
 
 if tipo_venda == "Apenas Vendas Geradas":
-    vendas = df_o[df_o["SITUAÇÃO"] == "VENDA GERADA"]["CLIENTE"].nunique()
+    vendas = (df_o["STATUS_BASE"] == "VENDA_GERADA").sum()
 else:
-    vendas = df_o[df_o["SITUAÇÃO"].isin(["VENDA GERADA", "VENDA INFORMADA"])]["CLIENTE"].nunique()
-
-aprovados = df_o[df_o["SITUAÇÃO"].isin(["APROVADO", "APROVADO BACEN"])]["CLIENTE"].nunique()
-
-# Conversões (sempre baseadas em EM ANÁLISE)
-conv_lead_analise = (analises / leads * 100) if leads else 0
-conv_analise_aprov = (aprovados / analises * 100) if analises else 0
-conv_analise_venda = (vendas / analises * 100) if analises else 0
-conv_aprov_venda = (vendas / aprovados * 100) if aprovados else 0
+    vendas = df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"]).sum()
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Leads", leads)
 c2.metric("Análises", analises)
-c3.metric("Reanálises", reanalis)
+c3.metric("Reanálises", reanalises)
 c4.metric("Vendas", vendas)
 
 c5, c6, c7, c8 = st.columns(4)
-c5.metric("Lead → Análise", f"{conv_lead_analise:.1f}%")
-c6.metric("Análise → Aprovação", f"{conv_analise_aprov:.1f}%")
-c7.metric("Análise → Venda", f"{conv_analise_venda:.1f}%")
-c8.metric("Aprovação → Venda", f"{conv_aprov_venda:.1f}%")
+c5.metric("Lead → Análise", f"{analises/leads*100:.1f}%" if leads else "0%")
+c6.metric("Análise → Aprovação", f"{aprovados/analises*100:.1f}%" if analises else "0%")
+c7.metric("Análise → Venda", f"{vendas/analises*100:.1f}%" if analises else "0%")
+c8.metric("Aprovação → Venda", f"{vendas/aprovados*100:.1f}%" if aprovados else "0%")
 
 # =========================================================
-# TABELA – ÚLTIMO STATUS DO LEAD
+# TABELA – ÚLTIMA ATUALIZAÇÃO
 # =========================================================
-st.markdown("---")
-st.subheader("📋 Leads da Origem Selecionada (Última Atualização)")
+st.subheader("📋 Leads da Origem Selecionada")
 
-st.dataframe(
-    df_o[["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA"]]
-        .sort_values("DATA", ascending=False),
-    use_container_width=True
-)
+tabela = df_o.sort_values("DATA", ascending=False)
+tabela = tabela[["CLIENTE", "CORRETOR", "EQUIPE", "STATUS_BASE", "DATA"]]
+tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 
-# =========================================================
-# AUDITORIA DE CLIENTE
-# =========================================================
-st.markdown("---")
-st.subheader("🔍 Auditoria Rápida de Cliente")
-
-modo_busca = st.radio("Buscar por:", ["Nome", "CPF"], horizontal=True)
-busca = st.text_input("Digite para buscar")
-
-if busca:
-    if modo_busca == "Nome":
-        df_c = df[df["CLIENTE"].str.contains(busca.upper(), na=False)]
-    else:
-        df_c = df[df["CPF"].astype(str).str.contains(busca, na=False)]
-
-    if not df_c.empty:
-        cliente = df_c.iloc[0]
-
-        st.markdown(f"### 👤 {cliente['CLIENTE']}")
-        st.write(f"**CPF:** {cliente.get('CPF', 'NÃO INFORMADO')}")
-        st.write(f"**Situação atual:** {cliente['SITUAÇÃO']}")
-        st.write(f"**Última movimentação:** {cliente['DATA'].date()}")
-        st.write(f"**Corretor:** {cliente['CORRETOR']}")
-        st.write(f"**Construtora:** {cliente.get('CONSTRUTORA', '-')}")
-        st.write(f"**Empreendimento:** {cliente.get('EMPREENDIMENTO', '-')}")
-
-        st.markdown("### 📜 Histórico do Cliente")
-        st.dataframe(
-            df_c.sort_values("DATA")[["DATA", "SITUAÇÃO", "OBSERVAÇÕES"]],
-            use_container_width=True
-        )
+st.dataframe(tabela, use_container_width=True)

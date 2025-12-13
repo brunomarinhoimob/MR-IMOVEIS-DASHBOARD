@@ -1,55 +1,38 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
-st.set_page_config(
-    page_title="Funil de Leads",
-    layout="wide"
-)
-
+st.set_page_config(page_title="Funil de Leads", layout="wide")
 st.title("📊 Funil de Leads – Origem, Status e Conversão")
 
 # =========================
-# FUNÇÕES AUXILIARES
+# FUNÇÕES
 # =========================
 
 def normalizar_nome(nome):
     if pd.isna(nome):
         return ""
-    return (
-        str(nome)
-        .upper()
-        .strip()
-        .replace("  ", " ")
-    )
+    return " ".join(str(nome).upper().split())
 
 
-@st.cache_data(ttl=1800)  # cache 30 minutos
+@st.cache_data(ttl=1800)
 def carregar_planilha():
-    df = pd.read_csv(
-        "https://docs.google.com/spreadsheets/d/SEU_ID_AQUI/export?format=csv",
-        dtype=str
-    )
+    caminho = "utils/dados_funil.csv"  # <- ARQUIVO LOCAL
 
+    df = pd.read_csv(caminho, dtype=str)
     df.columns = [c.upper().strip() for c in df.columns]
 
     df["NOME_CLIENTE"] = df["CLIENTE"].apply(normalizar_nome)
     df["STATUS_BASE"] = df["SITUAÇÃO"].str.upper().str.strip()
-
     df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
 
     df = df.dropna(subset=["DIA"])
-
     return df
 
 
 @st.cache_data(ttl=1800)
-def carregar_crm_ultimos_1000():
-    # Exemplo – adapte para sua função real de CRM
+def carregar_crm():
     df = pd.read_json("teste_leads.json")
-
-    df.columns = [c.lower() for c in df.columns]
 
     df["NOME_CLIENTE"] = df["nome_pessoa"].apply(normalizar_nome)
     df["ORIGEM"] = df.get("nome_origem", "SEM ORIGEM").fillna("SEM ORIGEM").str.upper()
@@ -61,19 +44,15 @@ def carregar_crm_ultimos_1000():
 
 
 # =========================
-# CARGA DE DADOS
+# CARGA
 # =========================
 
 df_plan = carregar_planilha()
-df_crm = carregar_crm_ultimos_1000()
+df_crm = carregar_crm()
 
 # =========================
-# FILTRO DE DATA (CORRIGIDO)
+# FILTRO DE DATA (SEGURO)
 # =========================
-
-if df_plan.empty:
-    st.warning("Sem dados na planilha.")
-    st.stop()
 
 data_inicio, data_fim = st.date_input(
     "📅 Período",
@@ -88,38 +67,50 @@ df_plan = df_plan[
 ]
 
 # =========================
-# DEDUP – ÚLTIMO STATUS DO LEAD
+# ÚLTIMO STATUS DO LEAD
 # =========================
 
 df_plan = df_plan.sort_values("DIA")
 df_plan = df_plan.groupby("NOME_CLIENTE", as_index=False).last()
 
 # =========================
-# KPI MACRO
+# MERGE CRM
+# =========================
+
+df = df_plan.merge(
+    df_crm[["NOME_CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR", "EQUIPE"]],
+    on="NOME_CLIENTE",
+    how="left"
+)
+
+df["ORIGEM"] = df["ORIGEM"].fillna("SEM CADASTRO NO CRM")
+
+# =========================
+# KPIs MACRO
 # =========================
 
 st.subheader("📌 Status Atual do Funil")
 
-col1, col2, col3, col4 = st.columns(4)
+cols = st.columns(4)
 
-def kpi(col, titulo, valor):
-    col.metric(titulo, int(valor))
+def kpi(col, label, value):
+    col.metric(label, int(value))
 
-kpi(col1, "Em Análise", (df_plan["STATUS_BASE"] == "EM ANÁLISE").sum())
-kpi(col1, "Reanálises", (df_plan["STATUS_BASE"] == "REANÁLISE").sum())
+kpi(cols[0], "Em Análise", (df["STATUS_BASE"] == "EM ANÁLISE").sum())
+kpi(cols[0], "Reanálise", (df["STATUS_BASE"] == "REANÁLISE").sum())
 
-kpi(col2, "Aprovados", (df_plan["STATUS_BASE"] == "APROVAÇÃO").sum())
-kpi(col2, "Aprovados Bacen", (df_plan["STATUS_BASE"] == "APROVADO BACEN").sum())
+kpi(cols[1], "Aprovados", (df["STATUS_BASE"] == "APROVAÇÃO").sum())
+kpi(cols[1], "Aprovados Bacen", (df["STATUS_BASE"] == "APROVADO BACEN").sum())
 
-kpi(col3, "Pendências", (df_plan["STATUS_BASE"] == "PENDÊNCIA").sum())
-kpi(col3, "Reprovados", (df_plan["STATUS_BASE"] == "REPROVAÇÃO").sum())
+kpi(cols[2], "Pendência", (df["STATUS_BASE"] == "PENDÊNCIA").sum())
+kpi(cols[2], "Reprovados", (df["STATUS_BASE"] == "REPROVAÇÃO").sum())
 
-kpi(col4, "Vendas Geradas", (df_plan["STATUS_BASE"] == "VENDA GERADA").sum())
-kpi(col4, "Vendas Informadas", (df_plan["STATUS_BASE"] == "VENDA INFORMADA").sum())
+kpi(cols[3], "Venda Gerada", (df["STATUS_BASE"] == "VENDA GERADA").sum())
+kpi(cols[3], "Venda Informada", (df["STATUS_BASE"] == "VENDA INFORMADA").sum())
 
 st.metric(
-    "Leads no Funil",
-    df_plan[~df_plan["STATUS_BASE"].isin(["DESISTIU", "VENDA GERADA"])].shape[0]
+    "Leads Ativos no Funil",
+    df[~df["STATUS_BASE"].isin(["DESISTIU", "VENDA GERADA"])].shape[0]
 )
 
 # =========================
@@ -129,70 +120,58 @@ st.metric(
 st.divider()
 st.subheader("📍 Performance por Origem")
 
-df_merge = df_plan.merge(
-    df_crm[["NOME_CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR", "EQUIPE"]],
-    on="NOME_CLIENTE",
-    how="left"
-)
+origens = ["TODAS"] + sorted(df["ORIGEM"].unique())
+origem = st.selectbox("Selecione a origem", origens)
 
-df_merge["ORIGEM"] = df_merge["ORIGEM"].fillna("SEM CADASTRO NO CRM")
+df_f = df if origem == "TODAS" else df[df["ORIGEM"] == origem]
 
-origens = ["TODAS"] + sorted(df_merge["ORIGEM"].unique().tolist())
-origem_sel = st.selectbox("Selecione a Origem", origens)
+c1, c2, c3, c4 = st.columns(4)
 
-if origem_sel != "TODAS":
-    df_filtro = df_merge[df_merge["ORIGEM"] == origem_sel]
-else:
-    df_filtro = df_merge.copy()
+kpi(c1, "Leads", len(df_f))
+kpi(c1, "Análises", (df_f["STATUS_BASE"] == "EM ANÁLISE").sum())
 
-colA, colB, colC, colD = st.columns(4)
+kpi(c2, "Aprovados", (df_f["STATUS_BASE"] == "APROVAÇÃO").sum())
+kpi(c2, "Vendas Geradas", (df_f["STATUS_BASE"] == "VENDA GERADA").sum())
 
-kpi(colA, "Leads", len(df_filtro))
-kpi(colA, "Análises", (df_filtro["STATUS_BASE"] == "EM ANÁLISE").sum())
+kpi(c3, "Pendências", (df_f["STATUS_BASE"] == "PENDÊNCIA").sum())
+kpi(c3, "Reprovados", (df_f["STATUS_BASE"] == "REPROVAÇÃO").sum())
 
-kpi(colB, "Aprovados", (df_filtro["STATUS_BASE"] == "APROVAÇÃO").sum())
-kpi(colB, "Vendas Geradas", (df_filtro["STATUS_BASE"] == "VENDA GERADA").sum())
-
-kpi(colC, "Pendências", (df_filtro["STATUS_BASE"] == "PENDÊNCIA").sum())
-kpi(colC, "Reprovados", (df_filtro["STATUS_BASE"] == "REPROVAÇÃO").sum())
-
-kpi(colD, "Desistidos", (df_filtro["STATUS_BASE"] == "DESISTIU").sum())
+kpi(c4, "Desistidos", (df_f["STATUS_BASE"] == "DESISTIU").sum())
 
 # =========================
-# CONVERSÕES
+# CONVERSÃO
 # =========================
 
 st.divider()
 st.subheader("📈 Conversões")
 
-total_leads = len(df_filtro)
-analises = (df_filtro["STATUS_BASE"] == "EM ANÁLISE").sum()
-aprovados = (df_filtro["STATUS_BASE"] == "APROVAÇÃO").sum()
-vendas = (df_filtro["STATUS_BASE"] == "VENDA GERADA").sum()
+def taxa(a, b):
+    return f"{(a/b*100):.1f}%" if b else "0%"
 
-def taxa(num, den):
-    return f"{(num/den*100):.1f}%" if den > 0 else "0%"
+leads = len(df_f)
+analises = (df_f["STATUS_BASE"] == "EM ANÁLISE").sum()
+aprov = (df_f["STATUS_BASE"] == "APROVAÇÃO").sum()
+vendas = (df_f["STATUS_BASE"] == "VENDA GERADA").sum()
 
-c1, c2, c3 = st.columns(3)
-
-c1.metric("Leads → Análise", taxa(analises, total_leads))
-c2.metric("Análise → Aprovação", taxa(aprovados, analises))
-c3.metric("Aprovação → Venda", taxa(vendas, aprovados))
+x, y, z = st.columns(3)
+x.metric("Leads → Análise", taxa(analises, leads))
+y.metric("Análise → Aprovação", taxa(aprov, analises))
+z.metric("Aprovação → Venda", taxa(vendas, aprov))
 
 # =========================
-# BUSCA DE CLIENTE
+# AUDITORIA CLIENTE
 # =========================
 
 st.divider()
 st.subheader("🔎 Auditoria de Cliente")
 
-cliente_busca = st.text_input("Digite o nome do cliente")
+busca = st.text_input("Buscar cliente")
 
-if cliente_busca:
-    nome_busca = normalizar_nome(cliente_busca)
-    df_cliente = df_merge[df_merge["NOME_CLIENTE"].str.contains(nome_busca)]
+if busca:
+    nome = normalizar_nome(busca)
+    df_cli = df[df["NOME_CLIENTE"].str.contains(nome)]
 
-    if df_cliente.empty:
+    if df_cli.empty:
         st.info("Cliente não encontrado.")
     else:
-        st.dataframe(df_cliente, use_container_width=True)
+        st.dataframe(df_cli, use_container_width=True)

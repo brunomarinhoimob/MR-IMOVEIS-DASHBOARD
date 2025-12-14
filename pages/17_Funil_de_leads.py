@@ -1,27 +1,35 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import requests
-from datetime import datetime, date
+from datetime import date
 
 st.set_page_config(layout="wide")
 
 # ===============================
-# CONFIG
+# CONFIGURAÇÕES FIXAS
 # ===============================
-TOKEN = "SEU_TOKEN_AQUI"
+TOKEN = "SEU_TOKEN_DO_SUPREMO_AQUI"
+
+SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1Ir_fPugLsfHNk6iH0XPCA6xM92bq8tTrn7UnunGRwCw"
+    "/export?format=csv&gid=1574157905"
+)
+
 CRM_URL = "https://api.supremocrm.com.br/v1/leads"
-SHEET_URL = "https://docs.google.com/spreadsheets/d/SEU_SHEET_ID/export?format=csv&gid=SEU_GID"
 
 # ===============================
-# FUNÇÕES
+# FUNÇÕES DE CARGA
 # ===============================
 @st.cache_data
 def carregar_planilha():
     df = pd.read_csv(SHEET_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
+
     df["DATA"] = pd.to_datetime(df["DATA"], errors="coerce")
     df["CLIENTE"] = df["CLIENTE"].str.upper().str.strip()
+    df["CORRETOR"] = df["CORRETOR"].str.upper().str.strip()
+
     return df
 
 
@@ -32,31 +40,35 @@ def carregar_crm():
     dados = []
 
     while True:
-        resp = requests.get(
+        r = requests.get(
             CRM_URL,
             headers=headers,
             params={"page": page, "per_page": 1000},
             timeout=30
         )
-        if resp.status_code != 200:
+
+        if r.status_code != 200:
             break
 
-        js = resp.json().get("dados", [])
-        if not js:
+        bloco = r.json().get("dados", [])
+        if not bloco:
             break
 
-        dados.extend(js)
+        dados.extend(bloco)
         page += 1
 
     df = pd.json_normalize(dados)
     df["CLIENTE"] = df["nome_pessoa"].str.upper().str.strip()
+
     return df[["CLIENTE", "nome_origem", "nome_campanha"]]
 
 
-def status_base(txt):
+def normalizar_status(txt):
     if pd.isna(txt):
         return "OUTRO"
+
     t = txt.upper()
+
     if "DESIST" in t:
         return "DESISTIU"
     if "VENDA INFORMADA" in t:
@@ -75,58 +87,39 @@ def status_base(txt):
         return "PENDENCIA"
     if "ANÁLISE" in t or "ANALISE" in t:
         return "EM_ANALISE"
+
     return "OUTRO"
 
 
 # ===============================
-# CARGA DE DADOS
+# CARGA DOS DADOS
 # ===============================
 df = carregar_planilha()
-df["STATUS_BASE"] = df["SITUAÇÃO"].apply(status_base)
+df["STATUS_BASE"] = df["SITUAÇÃO"].apply(normalizar_status)
 
 df_crm = carregar_crm()
 df = df.merge(df_crm, on="CLIENTE", how="left")
 
 # ===============================
-# DATA BASE
-# ===============================
-df["DATA_BASE_LABEL"] = df["DATA BASE"]
-
-meses = {
-    "JANEIRO": 1, "FEVEREIRO": 2, "MARÇO": 3, "ABRIL": 4,
-    "MAIO": 5, "JUNHO": 6, "JULHO": 7, "AGOSTO": 8,
-    "SETEMBRO": 9, "OUTUBRO": 10, "NOVEMBRO": 11, "DEZEMBRO": 12
-}
-
-def parse_data_base(x):
-    try:
-        mes, ano = x.split()
-        return date(int(ano), meses[mes.upper()], 1)
-    except:
-        return None
-
-df["DATA_BASE_DATE"] = df["DATA_BASE_LABEL"].apply(parse_data_base)
-
-# ===============================
-# SIDEBAR
+# FILTROS
 # ===============================
 st.sidebar.title("Filtros")
 
-modo = st.sidebar.radio("Filtro de período", ["DIA", "DATA BASE"])
+modo = st.sidebar.radio("Período", ["DIA", "DATA BASE"])
 
 if modo == "DIA":
     ini, fim = st.sidebar.date_input(
-        "Período",
+        "Selecione o período",
         value=(df["DATA"].min().date(), df["DATA"].max().date())
     )
     df = df[(df["DATA"].dt.date >= ini) & (df["DATA"].dt.date <= fim)]
 else:
     bases = st.sidebar.multiselect(
         "Data Base",
-        sorted(df["DATA_BASE_LABEL"].dropna().unique())
+        sorted(df["DATA BASE"].dropna().unique())
     )
     if bases:
-        df = df[df["DATA_BASE_LABEL"].isin(bases)]
+        df = df[df["DATA BASE"].isin(bases)]
 
 origem = st.sidebar.selectbox(
     "Origem",
@@ -139,51 +132,54 @@ if origem != "Todas":
 # ===============================
 # HISTÓRICO POR CLIENTE
 # ===============================
-historico = df.sort_values("DATA")
+df = df.sort_values("DATA")
 
-clientes = historico["CLIENTE"].unique()
+clientes = df["CLIENTE"].unique()
 
-def teve_status(cliente, status):
-    return any(historico[(historico["CLIENTE"] == cliente)]["STATUS_BASE"] == status)
+def cliente_tem(cliente, status):
+    return (df[(df["CLIENTE"] == cliente)]["STATUS_BASE"] == status).any()
 
-leads = len(clientes)
+total_leads = len(clientes)
 
-analises = sum(teve_status(c, "EM_ANALISE") for c in clientes)
-aprovados = sum(teve_status(c, "APROVADO") for c in clientes)
+analises = sum(cliente_tem(c, "EM_ANALISE") for c in clientes)
+aprovados = sum(cliente_tem(c, "APROVADO") for c in clientes)
 
 vendas = 0
 for c in clientes:
-    teve_venda = teve_status(c, "VENDA_GERADA") or teve_status(c, "VENDA_INFORMADA")
-    desistiu = teve_status(c, "DESISTIU")
+    teve_venda = cliente_tem(c, "VENDA_GERADA") or cliente_tem(c, "VENDA_INFORMADA")
+    desistiu = cliente_tem(c, "DESISTIU")
+
     if teve_venda and not desistiu:
         vendas += 1
 
 # ===============================
 # CARDS
 # ===============================
-col1, col2, col3, col4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 
-col1.metric("Leads", leads)
-col2.metric("Análises", analises)
-col3.metric("Aprovados", aprovados)
-col4.metric("Vendas", vendas)
+c1.metric("Leads", total_leads)
+c2.metric("Análises", analises)
+c3.metric("Aprovados", aprovados)
+c4.metric("Vendas", vendas)
 
 # ===============================
 # CONVERSÕES
 # ===============================
 st.subheader("Conversões")
 
-c1, c2, c3 = st.columns(3)
+cc1, cc2, cc3 = st.columns(3)
 
-c1.metric(
+cc1.metric(
     "Lead → Análise",
-    f"{(analises / leads * 100):.1f}%" if leads else "0%"
+    f"{(analises / total_leads * 100):.1f}%" if total_leads else "0%"
 )
-c2.metric(
+
+cc2.metric(
     "Análise → Aprovação",
     f"{(aprovados / analises * 100):.1f}%" if analises else "0%"
 )
-c3.metric(
+
+cc3.metric(
     "Aprovação → Venda",
     f"{(vendas / aprovados * 100):.1f}%" if aprovados else "0%"
 )
@@ -191,7 +187,8 @@ c3.metric(
 # ===============================
 # TABELA FINAL
 # ===============================
-st.subheader("Leads no período")
+st.subheader("Leads no período selecionado")
+
 st.dataframe(
     df.sort_values("DATA", ascending=False),
     use_container_width=True

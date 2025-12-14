@@ -55,7 +55,7 @@ def parse_data_base(label):
     return date(ano, mes, 1)
 
 # =========================================================
-# CARGA PLANILHA (HISTÓRICO COMPLETO)
+# CARGA PLANILHA (HISTÓRICO)
 # =========================================================
 @st.cache_data(ttl=300)
 def carregar_planilha():
@@ -90,9 +90,7 @@ def carregar_planilha():
         mask = df["STATUS_RAW"].str.contains(chave, na=False)
         df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
 
-    df = df[df["STATUS_BASE"] != ""]
-
-    return df
+    return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
 # CARGA CRM
@@ -185,7 +183,7 @@ c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads no Funil", len(df_atual))
 
 # =========================================================
-# CONVERSÃO (ESTOQUE ACUMULADO)
+# CONVERSÃO (ESTOQUE)
 # =========================================================
 st.subheader("📈 Performance e Conversão por Origem")
 
@@ -210,13 +208,17 @@ c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# TABELA
+# TABELA (RESPEITA A ORIGEM SELECIONADA)
 # =========================================================
 st.divider()
-st.subheader("📋 Leads")
+st.subheader("📋 Leads da Origem Selecionada")
 
-tabela = df_atual[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]]
-tabela = tabela.sort_values("DATA", ascending=False)
+df_atual_origem = df_o.sort_values("DATA").groupby("CLIENTE", as_index=False).last()
+
+tabela = df_atual_origem[
+    ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
+].sort_values("DATA", ascending=False)
+
 tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 
 st.dataframe(tabela, use_container_width=True)

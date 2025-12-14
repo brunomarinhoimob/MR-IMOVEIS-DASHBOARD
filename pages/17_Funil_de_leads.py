@@ -1,5 +1,6 @@
 # =========================================================
 # FUNIL DE LEADS – ORIGEM, STATUS E CONVERSÃO
+# (Conversão: Análise = só EM ANÁLISE | Aprovado = só APROVAÇÃO)
 # =========================================================
 
 import streamlit as st
@@ -62,33 +63,43 @@ def carregar_planilha():
     df = pd.read_csv(CSV_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
 
+    # Datas
     df["DATA"] = parse_data(df["DATA"])
     df = df.dropna(subset=["DATA"])
 
+    # Data base
     df["DATA_BASE_LABEL"] = df.get("DATA BASE", "").astype(str).str.strip()
     df["DATA_BASE_DATE"] = df["DATA_BASE_LABEL"].apply(parse_data_base)
 
+    # Normalizações
     for col in ["CLIENTE", "CORRETOR", "EQUIPE"]:
+        if col not in df.columns:
+            df[col] = ""
         df[col] = df[col].astype(str).str.upper().str.strip()
 
-    df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper().str.strip()
+    df["STATUS_RAW"] = df.get("SITUAÇÃO", "").astype(str).str.upper().str.strip()
     df["STATUS_BASE"] = ""
 
-    regras = {
-        "EM ANÁLISE": "ANALISE",
-        "REANÁLISE": "REANALISE",
-        "APROVADO BACEN": "APROVADO_BACEN",
-        "APROVA": "APROVADO",
-        "REPROV": "REPROVADO",
-        "PEND": "PENDENCIA",
-        "VENDA GERADA": "VENDA_GERADA",
-        "VENDA INFORMADA": "VENDA_INFORMADA",
-        "DESIST": "DESISTIU",
-    }
+    # ⚠️ MAPEAMENTO BLINDADO (ordem importa e não sobrescreve)
+    # - APROVADO BACEN não pode virar APROVADO
+    regras_ordenadas = [
+        ("APROVADO BACEN", "APROVADO_BACEN"),
+        ("EM ANÁLISE", "ANALISE"),
+        ("REANÁLISE", "REANALISE"),
+        ("VENDA GERADA", "VENDA_GERADA"),
+        ("VENDA INFORMADA", "VENDA_INFORMADA"),
+        ("REPROV", "REPROVADO"),
+        ("PEND", "PENDENCIA"),
+        ("DESIST", "DESISTIU"),
+        ("APROVA", "APROVADO"),  # por último
+    ]
 
-    for chave, valor in regras.items():
-        df.loc[df["STATUS_RAW"].str.contains(chave), "STATUS_BASE"] = valor
+    for chave, valor in regras_ordenadas:
+        mask = df["STATUS_RAW"].str.contains(chave, na=False)
+        # não sobrescreve status já definido
+        df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
 
+    # mantém só linhas válidas do funil
     df = df[df["STATUS_BASE"] != ""]
 
     # Último status por cliente (lead permanece no funil)
@@ -165,16 +176,16 @@ else:
     if sel:
         df_filtro = df_filtro[df_filtro["DATA_BASE_LABEL"].isin(sel)]
 
-equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_filtro["EQUIPE"].unique()))
+equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_filtro["EQUIPE"].dropna().unique()))
 if equipe != "TODAS":
     df_filtro = df_filtro[df_filtro["EQUIPE"] == equipe]
 
-corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_filtro["CORRETOR"].unique()))
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_filtro["CORRETOR"].dropna().unique()))
 if corretor != "TODOS":
     df_filtro = df_filtro[df_filtro["CORRETOR"] == corretor]
 
 # =========================================================
-# STATUS ATUAL
+# STATUS ATUAL (CARDS)
 # =========================================================
 st.subheader("📌 Status Atual do Funil")
 
@@ -192,30 +203,41 @@ cols[1].metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
 cols[2].metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 cols[3].metric("Leads no Funil", len(df_filtro))
 
+cols = st.columns(2)
+cols[0].metric("Vendas Informadas", int(kpi.get("VENDA_INFORMADA", 0)))
+cols[1].metric("Vendas Geradas", int(kpi.get("VENDA_GERADA", 0)))
+
 # =========================================================
-# PERFORMANCE POR ORIGEM
+# PERFORMANCE POR ORIGEM (CONVERSÃO COM NOVA REGRA)
 # =========================================================
 st.subheader("📈 Performance e Conversão por Origem")
 
-origem = st.selectbox("Origem", ["TODAS"] + sorted(df_filtro["ORIGEM"].unique()))
+origem = st.selectbox("Origem", ["TODAS"] + sorted(df_filtro["ORIGEM"].dropna().unique()))
 df_o = df_filtro if origem == "TODAS" else df_filtro[df_filtro["ORIGEM"] == origem]
 
+# Base
 leads = len(df_o)
-analises = df_o[df_o["STATUS_BASE"] != ""].shape[0]
-aprovados = df_o[df_o["STATUS_BASE"].isin(["APROVADO", "APROVADO_BACEN", "VENDA_GERADA", "VENDA_INFORMADA"])].shape[0]
-vendas = df_o[df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"])].shape[0]
+
+# ✅ CONVERSÃO: só conta como análise "EM ANÁLISE"
+analises = int((df_o["STATUS_BASE"] == "ANALISE").sum())
+
+# ✅ CONVERSÃO: só conta como aprovado "APROVAÇÃO"
+aprovados = int((df_o["STATUS_BASE"] == "APROVADO").sum())
+
+# Vendas (mantém como está: venda gerada/informada)
+vendas = int(df_o["STATUS_BASE"].isin(["VENDA_GERADA", "VENDA_INFORMADA"]).sum())
 
 cols = st.columns(4)
 cols[0].metric("Leads", leads)
-cols[1].metric("Análises", analises)
-cols[2].metric("Aprovados", aprovados)
+cols[1].metric("Análises (só EM ANÁLISE)", analises)
+cols[2].metric("Aprovados (só APROVAÇÃO)", aprovados)
 cols[3].metric("Vendas", vendas)
 
 cols = st.columns(4)
-cols[0].metric("Lead → Análise", f"{(analises/leads*100 if leads else 0):.1f}%")
-cols[1].metric("Análise → Aprovação", f"{(aprovados/analises*100 if analises else 0):.1f}%")
-cols[2].metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}%")
-cols[3].metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
+cols[0].metric("Lead → Análise", f"{(analises / leads * 100 if leads else 0):.1f}%")
+cols[1].metric("Análise → Aprovação", f"{(aprovados / analises * 100 if analises else 0):.1f}%")
+cols[2].metric("Análise → Venda", f"{(vendas / analises * 100 if analises else 0):.1f}%")
+cols[3].metric("Aprovação → Venda", f"{(vendas / aprovados * 100 if aprovados else 0):.1f}%")
 
 # =========================================================
 # TABELA
@@ -223,7 +245,7 @@ cols[3].metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados el
 st.divider()
 st.subheader("📋 Leads")
 
-tabela = df_o[["CLIENTE", "CORRETOR", "EQUIPE", "STATUS_BASE", "DATA"]]
+tabela = df_o[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]].copy()
 tabela = tabela.sort_values("DATA", ascending=False)
 tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 

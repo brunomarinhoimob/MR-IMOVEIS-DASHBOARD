@@ -40,7 +40,7 @@ def parse_data(col):
     return pd.to_datetime(col, dayfirst=True, errors="coerce")
 
 def parse_data_base(label):
-    if not label or pd.isna(label):
+    if pd.isna(label):
         return pd.NaT
     p = str(label).upper().split()
     if len(p) < 2:
@@ -55,12 +55,16 @@ def parse_data_base(label):
     return date(ano, mes, 1)
 
 # =========================================================
-# CARGA PLANILHA (HISTÓRICO COMPLETO)
+# CARGA PLANILHA
 # =========================================================
 @st.cache_data(ttl=300)
 def carregar_planilha():
     df = pd.read_csv(CSV_URL, dtype=str)
     df.columns = df.columns.str.upper().str.strip()
+
+    for col in ["CLIENTE", "CORRETOR", "EQUIPE", "SITUAÇÃO", "DATA"]:
+        if col not in df.columns:
+            df[col] = ""
 
     df["DATA"] = parse_data(df["DATA"])
     df = df.dropna(subset=["DATA"])
@@ -90,9 +94,7 @@ def carregar_planilha():
         mask = df["STATUS_RAW"].str.contains(chave, na=False)
         df.loc[mask & (df["STATUS_BASE"] == ""), "STATUS_BASE"] = valor
 
-    df = df[df["STATUS_BASE"] != ""]
-
-    return df
+    return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
 # CARGA CRM
@@ -156,6 +158,9 @@ else:
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
 
+if "CORRETOR" not in df_f.columns:
+    df_f["CORRETOR"] = ""
+
 equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
 if equipe != "TODAS":
     df_f = df_f[df_f["EQUIPE"] == equipe]
@@ -165,7 +170,7 @@ if corretor != "TODOS":
     df_f = df_f[df_f["CORRETOR"] == corretor]
 
 # =========================================================
-# STATUS ATUAL (ÚLTIMO STATUS)
+# STATUS ATUAL
 # =========================================================
 st.subheader("📌 Status Atual do Funil")
 
@@ -185,7 +190,7 @@ c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
 c8.metric("Leads no Funil", len(df_atual))
 
 # =========================================================
-# CONVERSÃO (ESTOQUE ACUMULADO)
+# PERFORMANCE POR ORIGEM
 # =========================================================
 st.subheader("📈 Performance e Conversão por Origem")
 
@@ -210,13 +215,22 @@ c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# TABELA
+# TABELA (RESPEITA ORIGEM)
 # =========================================================
 st.divider()
 st.subheader("📋 Leads")
 
-tabela = df_atual[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]]
-tabela = tabela.sort_values("DATA", ascending=False)
+df_tabela = (
+    df_o
+    .sort_values("DATA")
+    .groupby("CLIENTE", as_index=False)
+    .last()
+)
+
+tabela = df_tabela[
+    ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]
+].sort_values("DATA", ascending=False)
+
 tabela.rename(columns={"DATA": "ULTIMA_ATUALIZACAO"}, inplace=True)
 
 st.dataframe(tabela, use_container_width=True)

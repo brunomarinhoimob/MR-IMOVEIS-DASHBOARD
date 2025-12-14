@@ -116,17 +116,18 @@ def carregar_crm():
         pagina += 1
 
     if not dados:
-        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA"])
+        return pd.DataFrame(columns=["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR"])
 
     df = pd.DataFrame(dados)
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
     df["ORIGEM"] = df.get("nome_origem", "SEM CADASTRO NO CRM").fillna("SEM CADASTRO NO CRM")
     df["CAMPANHA"] = df.get("nome_campanha", "-").fillna("-")
+    df["CORRETOR"] = df.get("nome_corretor", "").fillna("")
 
     df["ORIGEM"] = df["ORIGEM"].astype(str).str.upper().str.strip()
     df["CAMPANHA"] = df["CAMPANHA"].astype(str).str.upper().str.strip()
 
-    return df[["CLIENTE", "ORIGEM", "CAMPANHA"]]
+    return df[["CLIENTE", "ORIGEM", "CAMPANHA", "CORRETOR"]]
 
 # =========================================================
 # DATASETS
@@ -215,7 +216,18 @@ c7.metric("Análise → Venda", f"{(vendas/analises*100 if analises else 0):.1f}
 c8.metric("Aprovação → Venda", f"{(vendas/aprovados*100 if aprovados else 0):.1f}%")
 
 # =========================================================
-# TABELA (RESPEITA ORIGEM)
+# CARD – LEADS DO CRM ATRIBUÍDOS A CORRETOR
+# =========================================================
+df_crm_periodo = df_crm.copy()
+
+leads_atribuidos = df_crm_periodo[df_crm_periodo["CORRETOR"] != ""]["CLIENTE"].nunique()
+
+st.markdown("---")
+c_atr, = st.columns(1)
+c_atr.metric("Leads do CRM atribuídos a corretor", leads_atribuidos)
+
+# =========================================================
+# TABELA
 # =========================================================
 st.divider()
 st.subheader("📋 Leads")

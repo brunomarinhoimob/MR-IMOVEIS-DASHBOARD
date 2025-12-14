@@ -162,10 +162,41 @@ else:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
     df_crm_f = df_crm.copy()
 
+if "CORRETOR" not in df_f.columns:
+    df_f["CORRETOR"] = ""
+
+equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
+if equipe != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe]
+
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
+if corretor != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor]
+
 # =========================================================
-# PERFORMANCE POR ORIGEM
+# STATUS ATUAL
 # =========================================================
-st.subheader("📈 Performance e Conversão por Origem")
+st.subheader("📌 Status Atual do Funil")
+
+df_atual = df_f.sort_values("DATA").groupby("CLIENTE", as_index=False).last()
+kpi = df_atual["STATUS_BASE"].value_counts()
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Em Análise", int(kpi.get("ANALISE", 0)))
+c2.metric("Reanálise", int(kpi.get("REANALISE", 0)))
+c3.metric("Pendência", int(kpi.get("PENDENCIA", 0)))
+c4.metric("Reprovado", int(kpi.get("REPROVADO", 0)))
+
+c5, c6, c7, c8 = st.columns(4)
+c5.metric("Aprovado", int(kpi.get("APROVADO", 0)))
+c6.metric("Aprovado Bacen", int(kpi.get("APROVADO_BACEN", 0)))
+c7.metric("Desistiu", int(kpi.get("DESISTIU", 0)))
+c8.metric("Leads no Funil", len(df_atual))
+
+# =========================================================
+# PERFORMANCE + CRM
+# =========================================================
+st.subheader("📈 Performance, Conversão e CRM")
 
 origem = st.selectbox("Origem", ["TODAS"] + sorted(df_f["ORIGEM"].unique()))
 df_o = df_f if origem == "TODAS" else df_f[df_f["ORIGEM"] == origem]
@@ -173,20 +204,18 @@ df_crm_o = df_crm_f if origem == "TODAS" else df_crm_f[df_crm_f["ORIGEM"] == ori
 
 leads = df_o["CLIENTE"].nunique()
 analises = df_o[df_o["STATUS_BASE"] == "ANALISE"]["CLIENTE"].nunique()
+aprovados = df_o[df_o["STATUS_BASE"] == "APROVADO"]["CLIENTE"].nunique()
+vendas = df_o[df_o["STATUS_BASE"] == "VENDA_GERADA"]["CLIENTE"].nunique()
 
-# =========================================================
-# CARDS CRM – LEADS POR PERÍODO + KPI
-# =========================================================
-st.markdown("---")
+crm_recebidos = df_crm_o["CLIENTE"].nunique()
+crm_distribuidos = df_crm_o[df_crm_o["CORRETOR_CRM"] != ""]["CLIENTE"].nunique()
+leads_por_analise = round(crm_distribuidos / analises, 1) if analises else 0
 
-leads_crm_periodo = df_crm_o["CLIENTE"].nunique()
-leads_distribuidos = df_crm_o[df_crm_o["CORRETOR_CRM"] != ""]["CLIENTE"].nunique()
-leads_por_analise = round(leads_distribuidos / analises, 1) if analises else 0
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Leads recebidos no CRM (período)", leads_crm_periodo)
-c2.metric("Leads distribuídos pelo CRM", leads_distribuidos)
-c3.metric("Leads necessários para 1 análise", leads_por_analise)
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Leads CRM (período)", crm_recebidos)
+c2.metric("Leads distribuídos CRM", crm_distribuidos)
+c3.metric("Análises", analises)
+c4.metric("Leads p/ 1 análise", leads_por_analise)
 
 # =========================================================
 # TABELA
@@ -200,10 +229,6 @@ df_tabela = (
     .groupby("CLIENTE", as_index=False)
     .last()
 )
-
-for col in ["CORRETOR", "EQUIPE"]:
-    if col not in df_tabela.columns:
-        df_tabela[col] = ""
 
 tabela = df_tabela[
     ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]

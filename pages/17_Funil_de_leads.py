@@ -162,6 +162,17 @@ else:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
     df_crm_f = df_crm.copy()
 
+if "CORRETOR" not in df_f.columns:
+    df_f["CORRETOR"] = ""
+
+equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
+if equipe != "TODAS":
+    df_f = df_f[df_f["EQUIPE"] == equipe]
+
+corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
+if corretor != "TODOS":
+    df_f = df_f[df_f["CORRETOR"] == corretor]
+
 # =========================================================
 # PERFORMANCE POR ORIGEM
 # =========================================================
@@ -183,16 +194,16 @@ c3.metric("Aprovados", aprovados)
 c4.metric("Vendas", vendas)
 
 # =========================================================
-# KPI – CRM → ANÁLISE
+# KPI CRM → ANÁLISE
 # =========================================================
 st.markdown("---")
 
 leads_atribuidos = df_crm_o[df_crm_o["CORRETOR"] != ""]["CLIENTE"].nunique()
-ratio = round(leads_atribuidos / analises, 1) if analises else 0
+kpi_ratio = round(leads_atribuidos / analises, 1) if analises else 0
 
 k1, k2 = st.columns(2)
 k1.metric("Leads do CRM atribuídos a corretor", leads_atribuidos)
-k2.metric("KPI: 1 análise a cada X leads", ratio)
+k2.metric("1 análise a cada X leads", kpi_ratio)
 
 # =========================================================
 # TABELA
@@ -206,6 +217,10 @@ df_tabela = (
     .groupby("CLIENTE", as_index=False)
     .last()
 )
+
+for col in ["CORRETOR", "EQUIPE"]:
+    if col not in df_tabela.columns:
+        df_tabela[col] = ""
 
 tabela = df_tabela[
     ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "CAMPANHA", "STATUS_BASE", "DATA"]

@@ -7,6 +7,9 @@ import pandas as pd
 import requests
 from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
 
 # =========================================================
 # CONFIGURAÇÃO

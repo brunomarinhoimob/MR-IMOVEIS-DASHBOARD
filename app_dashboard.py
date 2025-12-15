@@ -2,17 +2,39 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import timedelta, datetime
+from login import tela_login
 
 from utils.supremo_config import TOKEN_SUPREMO
 
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIGURAÇÃO DA PÁGINA (LOGIN vs DASHBOARD)
 # ---------------------------------------------------------
-st.set_page_config(
-    page_title="Dashboard Imobiliária – MR Imóveis",
-    page_icon="🏠",
-    layout="wide",
-)
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.set_page_config(
+        page_title="MR Imóveis | Inteligência Comercial",
+        page_icon="🏠",
+        layout="centered",
+        initial_sidebar_state="collapsed"
+    )
+else:
+    st.set_page_config(
+        page_title="Dashboard Imobiliária – MR Imóveis",
+        page_icon="🏠",
+        layout="wide"
+    )
+
+
+# ---------------------------------------------------------
+# CONTROLE DE LOGIN
+# ---------------------------------------------------------
+if "logado" not in st.session_state:
+    st.session_state.logado = False
+# ---------------------------------------------------------
+# TELA DE LOGIN (BLOQUEIO TOTAL)
+# ---------------------------------------------------------
+if not st.session_state.logado:
+    tela_login()
+    st.stop()
 
 # ---------------------------------------------------------
 # ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
@@ -155,6 +177,9 @@ try:
     st.sidebar.image(LOGO_PATH, use_container_width=True)
 except Exception:
     pass
+if st.sidebar.button("Sair"):
+    st.session_state.logado = False
+    st.rerun()
 
 # ---------------------------------------------------------
 # PLANILHA – GOOGLE SHEETS

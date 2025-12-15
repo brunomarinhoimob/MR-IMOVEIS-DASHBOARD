@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import timedelta, date
 import numpy as np
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA

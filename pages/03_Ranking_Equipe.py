@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import altair as alt
 from datetime import timedelta, datetime
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA

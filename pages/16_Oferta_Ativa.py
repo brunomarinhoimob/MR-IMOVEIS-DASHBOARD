@@ -4,6 +4,9 @@ import numpy as np
 from datetime import datetime, timedelta
 import requests
 from fpdf import FPDF
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
 
 from utils.supremo_config import TOKEN_SUPREMO
 

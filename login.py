@@ -2,6 +2,7 @@ import streamlit as st
 import os
 from auth_users import USUARIOS
 
+
 def tela_login():
 
     # -------------------------
@@ -62,17 +63,12 @@ def tela_login():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     logo_path = os.path.join(base_dir, "logo_mr_hd.png")
 
-    # Espaço vertical
     st.markdown("<div style='margin-top: 8vh'></div>", unsafe_allow_html=True)
 
-    # -------------------------
-    # Centralização
-    # -------------------------
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
 
-        # -------- LOGO (FUNDO BRANCO CLEAN) --------
         if os.path.exists(logo_path):
             st.markdown(
                 """
@@ -91,28 +87,27 @@ def tela_login():
             st.image(logo_path, width=220)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        # -------- FRASE --------
         st.markdown(
             "<div class='frase'>INTELIGÊNCIA COMERCIAL</div>",
             unsafe_allow_html=True
         )
 
-        # -------- CARD LOGIN --------
         st.markdown("<div class='login-card'>", unsafe_allow_html=True)
 
         usuario = st.text_input("Usuário")
         senha = st.text_input("Senha", type="password")
 
         if st.button("Entrar", use_container_width=True):
-    user = USUARIOS.get(usuario.lower())
+            usuario_input = usuario.lower().strip()
+            user = USUARIOS.get(usuario_input)
 
-    if user and senha == user["senha"]:
-        st.session_state.logado = True
-        st.session_state.usuario = usuario.lower()
-        st.session_state.nome_usuario = user["nome"].upper()
-        st.session_state.perfil = user["perfil"]
-        st.rerun()
-    else:
-        st.error("Usuário ou senha inválidos")
+            if user and senha == user["senha"]:
+                st.session_state.logado = True
+                st.session_state.usuario = usuario_input
+                st.session_state.nome_usuario = user["nome"].upper().strip()
+                st.session_state.perfil = user["perfil"]
+                st.rerun()
+            else:
+                st.error("Usuário ou senha inválidos")
 
         st.markdown("</div>", unsafe_allow_html=True)

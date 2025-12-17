@@ -208,7 +208,19 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
         st.info(obs)
 
     st.markdown("#### 📜 Histórico do cliente")
-    hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
+    # ---------------------------------------------------------
+# HISTÓRICO (SÓ COLUNAS EXISTENTES)
+# ---------------------------------------------------------
+cols_hist = ["DIA", "SITUACAO_ORIGINAL"]
+
+if "OBS" in grupo.columns:
+    cols_hist.append("OBS")
+
+if "OBS2" in grupo.columns:
+    cols_hist.append("OBS2")
+
+hist = grupo[cols_hist].copy()
+
     hist["DIA"] = hist["DIA"].dt.strftime("%d/%m/%Y")
 
     for c in ["OBS", "OBS2"]:

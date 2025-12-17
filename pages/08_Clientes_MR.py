@@ -1,11 +1,22 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+
+# ---------------------------------------------------------
+# BLOQUEIO SEM LOGIN
+# ---------------------------------------------------------
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
 
 from app_dashboard import carregar_dados_planilha
+
+st.set_page_config(
+    page_title="Clientes MR",
+    page_icon="👥",
+    layout="wide"
+)
+
 # ---------------------------------------------------------
 # CONTEXTO DO USUÁRIO LOGADO
 # ---------------------------------------------------------
@@ -16,113 +27,61 @@ nome_corretor_logado = (
     .strip()
 )
 
-st.set_page_config(
-    page_title="Clientes MR",
-    page_icon="🧑‍💼",
-    layout="wide",
-)
+# ---------------------------------------------------------
+# FUNÇÕES AUXILIARES
+# ---------------------------------------------------------
+def badge_status(texto):
+    texto = (texto or "").upper()
 
-# ---------------------------------------------------------
-# ESTILO GLOBAL (BADGES, AJUSTES VISUAIS)
-# ---------------------------------------------------------
-st.markdown(
+    cores = {
+        "EM ANÁLISE": "#2563eb",
+        "REANÁLISE": "#9333ea",
+        "APROVADO": "#16a34a",
+        "APROVADO BACEN": "#f97316",
+        "REPROVADO": "#dc2626",
+        "VENDA GERADA": "#15803d",
+        "VENDA INFORMADA": "#166534",
+        "DESISTIU": "#6b7280",
+    }
+
+    cor = cores.get(texto, "#374151")
+
+    return f"""
+    <span style="
+        background:{cor};
+        color:white;
+        padding:4px 10px;
+        border-radius:12px;
+        font-size:0.85rem;
+        font-weight:600;
+    ">
+        {texto}
+    </span>
     """
-    <style>
-        .badge-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 10px;
-            border-radius: 999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            letter-spacing: 0.03em;
-            border: 1px solid rgba(148, 163, 184, 0.55);
-            background: rgba(15, 23, 42, 0.9);
-        }
-        .badge-venda {
-            border-color: rgba(34, 197, 94, 0.9);
-            background: rgba(22, 163, 74, 0.13);
-            color: #bbf7d0;
-        }
-        .badge-aprovado {
-            border-color: rgba(250, 204, 21, 0.9);
-            background: rgba(202, 138, 4, 0.18);
-            color: #fef9c3;
-        }
-        .badge-analise {
-            border-color: rgba(59, 130, 246, 0.9);
-            background: rgba(37, 99, 235, 0.16);
-            color: #dbeafe;
-        }
-        .badge-pendente {
-            border-color: rgba(249, 115, 22, 0.9);
-            background: rgba(194, 65, 12, 0.17);
-            color: #ffedd5;
-        }
-        .badge-reprovado {
-            border-color: rgba(248, 113, 113, 0.9);
-            background: rgba(185, 28, 28, 0.22);
-            color: #fee2e2;
-        }
-        .badge-neutro {
-            color: #e5e7eb;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
+def obter_status_atual(grupo: pd.DataFrame) -> pd.Series:
+    grupo = grupo.sort_values("DIA").copy()
 
-def badge_status(situacao: str) -> str:
-    """Gera a badge visual estilo cartinha + emoji."""
-    if not situacao:
-        return '<span class="badge-status badge-neutro">⚪ Sem informação</span>'
+    mask_desist = grupo["SITUACAO_ORIGINAL"].str.contains("DESIST", na=False)
+    if mask_desist.any():
+        idx = grupo[mask_desist].index[-1]
+        grupo = grupo.loc[idx:]
 
-    s = str(situacao).upper()
-    if "VENDA" in s:
-        cls = "badge-venda"
-        emoji = "🟢"
-    elif "APROV" in s:
-        cls = "badge-aprovado"
-        emoji = "🟡"
-    elif "ANÁLISE" in s or "ANALISE" in s or "REANÁLISE" in s or "REANALISE" in s:
-        cls = "badge-analise"
-        emoji = "🔵"
-    elif "PEND" in s:
-        cls = "badge-pendente"
-        emoji = "🟠"
-    elif "REPROV" in s or "DESIST" in s:
-        cls = "badge-reprovado"
-        emoji = "🔴"
-    else:
-        cls = "badge-neutro"
-        emoji = "⚪"
+    vendas = grupo[grupo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])]
+    if not vendas.empty:
+        return vendas.iloc[-1]
 
-    return f'<span class="badge-status {cls}">{emoji} {situacao}</span>'
-
-
-# LOGO
-try:
-    st.image("logo_mr.png", width=160)
-except Exception:
-    st.write("MR Imóveis")
-
-st.markdown("## 🔎 Consulta de Clientes – MR Imóveis")
-st.caption(
-    "Pesquise o cliente para visualizar a situação atual (respeitando a regra VENDA / DESISTIU) "
-    "e todo o histórico dele com o corretor."
-)
+    return grupo.iloc[-1]
 
 # ---------------------------------------------------------
-# CARREGAMENTO DOS DADOS
+# CARREGAR BASE
 # ---------------------------------------------------------
 @st.cache_data(ttl=60)
-def carregar_dados():
+def carregar_base():
     df = carregar_dados_planilha()
-    df.columns = [c.upper().strip() for c in df.columns]
+    df.columns = df.columns.str.upper().str.strip()
 
-    # DATA / DIA
+    # DATA
     if "DIA" in df:
         df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
     elif "DATA" in df:
@@ -130,300 +89,138 @@ def carregar_dados():
     else:
         df["DIA"] = pd.NaT
 
-    # NOME
-    col_nome = next(
-        (c for c in ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"] if c in df),
-        None,
-    )
-    if col_nome:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        )
-    else:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-
-    # CPF
-    col_cpf = next(
-        (c for c in ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"] if c in df),
-        None,
-    )
-    if col_cpf:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-            .str.strip()
-        )
-    else:
-        df["CPF_CLIENTE_BASE"] = ""
-
-    # CORRETOR
-    df["CORRETOR"] = (
-        df.get("CORRETOR", "NÃO INFORMADO")
-        .fillna("NÃO INFORMADO")
-        .astype(str)
+    # CLIENTE
+    df["NOME_CLIENTE_BASE"] = (
+        df.get("NOME_CLIENTE_BASE", df.get("NOME", ""))
+        .fillna("")
         .str.upper()
-        .str.strip()
     )
 
-    # CONSTRUTORA / EMPREENDIMENTO
-    df["CONSTRUTORA"] = (
-        df.get("CONSTRUTORA", "")
+    df["CPF_CLIENTE_BASE"] = (
+        df.get("CPF_CLIENTE_BASE", df.get("CPF", ""))
         .fillna("")
         .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-    df["EMPREENDIMENTO"] = (
-        df.get("EMPREENDIMENTO", "")
-        .fillna("")
-        .astype(str)
-        .str.upper()
-        .str.strip()
+        .str.replace(r"\D", "", regex=True)
     )
 
-    # STATUS / SITUAÇÃO
-    situacao_col = next(
-        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS", "SITUAÇÃO ATUAL"] if c in df),
-        None,
-    )
-    if situacao_col:
-        df["SITUACAO_ORIGINAL"] = (
-            df[situacao_col].fillna("").astype(str).str.strip()
-        )
-    else:
-        df["SITUACAO_ORIGINAL"] = ""
+    # PADRÕES
+    df["CORRETOR"] = df.get("CORRETOR", "").fillna("").str.upper()
+    df["EQUIPE"] = df.get("EQUIPE", "").fillna("").str.upper()
+    df["CONSTRUTORA"] = df.get("CONSTRUTORA", "").fillna("").str.upper()
+    df["EMPREENDIMENTO"] = df.get("EMPREENDIMENTO", "").fillna("").str.upper()
 
+    # STATUS
+    col_sit = next(
+        (c for c in ["SITUACAO", "SITUAÇÃO", "STATUS"] if c in df),
+        None
+    )
+    df["SITUACAO_ORIGINAL"] = df[col_sit].fillna("").astype(str) if col_sit else ""
     df["STATUS_BASE"] = df["SITUACAO_ORIGINAL"].str.upper()
-
-    # OBS / OBS2 (sem NAN)
-    df["OBS"] = (
-        df.get("OBSERVAÇÕES", "")
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-    df["OBS2"] = (
-        df.get("OBSERVAÇÕES 2", "")
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
 
     # CHAVE CLIENTE
     df["CHAVE"] = df["NOME_CLIENTE_BASE"] + "|" + df["CPF_CLIENTE_BASE"]
 
     return df
 
-
-df = carregar_dados()
+df = carregar_base()
 
 # ---------------------------------------------------------
-# BUSCA (AGORA NO CENTRO DA TELA)
+# CABEÇALHO
 # ---------------------------------------------------------
-with st.container():
-    st.markdown(
-        """
-        <div style="
-            margin-top: 1.5rem;
-            margin-bottom: 1.5rem;
-            padding: 1.25rem 1.5rem;
-            border-radius: 0.75rem;
-            background: rgba(15, 23, 42, 0.9);
-            border: 1px solid rgba(148, 163, 184, 0.45);
-        ">
-            <h4 style="margin: 0 0 0.75rem 0; font-weight: 600;">
-                🔍 Buscar cliente na base
-            </h4>
-        </div>
-        """,
-        unsafe_allow_html=True,
+st.markdown("## 👥 Consulta de Clientes – MR")
+st.caption("Busca por CPF ou nome do cliente.")
+
+# ---------------------------------------------------------
+# BUSCA
+# ---------------------------------------------------------
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    cpf_busca = st.text_input("CPF do cliente")
+
+with col2:
+    nome_busca = st.text_input("Nome do cliente")
+
+if not cpf_busca and not nome_busca:
+    st.info("Informe CPF ou nome para buscar.")
+    st.stop()
+
+mask = pd.Series(False, index=df.index)
+
+if cpf_busca:
+    cpf = cpf_busca.replace(".", "").replace("-", "").strip()
+    mask = df["CPF_CLIENTE_BASE"] == cpf
+
+if nome_busca:
+    nome = nome_busca.upper().strip()
+    mask = mask | df["NOME_CLIENTE_BASE"].str.contains(nome, na=False)
+
+resultado = df[mask].copy()
+
+# ---------------------------------------------------------
+# VALIDAÇÃO DE RESULTADO E POSSE DO CLIENTE
+# ---------------------------------------------------------
+if resultado.empty:
+    st.warning("⚠️ Cliente não encontrado ou sem análise.")
+    st.stop()
+
+if perfil == "corretor":
+    pertence = (
+        resultado["CORRETOR"]
+        .str.upper()
+        .str.strip()
+        .eq(nome_corretor_logado)
+        .any()
     )
 
-    col_esq, col_dir = st.columns([1, 3])
-
-    with col_esq:
-        modo_busca = st.radio(
-            "Buscar por:",
-            ["Nome", "CPF"],
-            horizontal=True,
-        )
-
-    with col_dir:
-        if modo_busca == "Nome":
-            placeholder = "Digite o nome do cliente"
-        else:
-            placeholder = "Digite o CPF do cliente (apenas números ou formatado)"
-
-        termo = st.text_input(
-            "Digite para buscar",
-            placeholder=placeholder,
-            key="busca_cliente_central",
-        )
-
+    if not pertence:
+        st.error("🚫 Cliente não pertence à sua carteira.")
+        st.info("Em caso de dúvida, procure a gestão.")
+        st.stop()
 
 # ---------------------------------------------------------
-# FUNÇÃO PARA OBTER STATUS ATUAL (RESPEITANDO DESISTIU / VENDAS)
+# EXIBIÇÃO DOS DADOS (SEGURO)
 # ---------------------------------------------------------
-def obter_status_atual(df_cli: pd.DataFrame) -> pd.Series:
-    """
-    Regra:
-    - Considera apenas o trecho após o último DESISTIU (se existir);
-    - Dentro desse trecho, se tiver VENDA GERADA / VENDA INFORMADA, pega a última venda;
-    - Se não tiver venda, pega a última linha do trecho.
-    """
-    df_cli = df_cli.sort_values("DIA").copy()
+for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
+    grupo = grupo.sort_values("DIA").copy()
+    ultima = obter_status_atual(grupo)
 
-    # Último DESISTIU
-    mask_desistiu = df_cli["STATUS_BASE"].str.contains("DESIST", na=False)
-    if mask_desistiu.any():
-        idx_last_reset = df_cli[mask_desistiu].index[-1]
-        df_seg = df_cli.loc[idx_last_reset:]
-    else:
-        df_seg = df_cli
+    st.markdown("---")
+    st.markdown(f"### 👤 {ultima['NOME_CLIENTE_BASE']}")
+    st.write(f"**CPF:** `{ultima['CPF_CLIENTE_BASE'] or 'NÃO INFORMADO'}`")
+    st.write(
+        f"**Última movimentação:** "
+        f"{ultima['DIA'].strftime('%d/%m/%Y') if pd.notna(ultima['DIA']) else ''}"
+    )
 
-    # Verifica vendas dentro do ciclo atual
-    mask_venda = df_seg["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])
-    if mask_venda.any():
-        return df_seg[mask_venda].iloc[-1]
-    else:
-        return df_seg.iloc[-1]
+    st.markdown(
+        f"**Situação atual:** {badge_status(ultima['SITUACAO_ORIGINAL'])}",
+        unsafe_allow_html=True
+    )
 
+    st.write(f"**Corretor responsável:** `{ultima['CORRETOR']}`")
+    st.write(f"**Construtora:** `{ultima['CONSTRUTORA'] or 'NÃO INFORMADO'}`")
+    st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
 
-# ---------------------------------------------------------
-# RESULTADO DA BUSCA
-# ---------------------------------------------------------
-if termo.strip():
-    termo_input = termo.strip().upper()
+    obs = (ultima.get("OBS2") or ultima.get("OBS") or "").strip()
+    if obs:
+        st.markdown("**Última observação:**")
+        st.info(obs)
 
-    if modo_busca == "Nome":
-        mask = df["NOME_CLIENTE_BASE"].str.contains(termo_input, na=False)
-    else:
-        cpf_num = "".join(c for c in termo if c.isdigit())
-        mask = df["CPF_CLIENTE_BASE"].str.contains(cpf_num, na=False)
+    st.markdown("#### 📜 Histórico do cliente")
+    hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
+    hist["DIA"] = hist["DIA"].dt.strftime("%d/%m/%Y")
 
-    if resultado.empty:
-    st.warning("Cliente não encontrado ou sem análise.")
-else:
-    # ---------------------------------------------------------
-    # VALIDA SE CLIENTE PERTENCE AO CORRETOR LOGADO
-    # ---------------------------------------------------------
-    if perfil == "corretor":
+    for c in ["OBS", "OBS2"]:
+        hist[c] = hist[c].fillna("").astype(str).str.strip()
 
-        pertence = (
-            resultado["CORRETOR"]
-            .str.upper()
-            .str.strip()
-            .eq(nome_corretor_logado)
-            .any()
-        )
+    hist = hist.rename(
+        columns={
+            "DIA": "Data",
+            "SITUACAO_ORIGINAL": "Situação",
+            "OBS": "Obs",
+            "OBS2": "Obs 2",
+        }
+    )
 
-        if not pertence:
-            st.error("🚫 Cliente não pertence à sua carteira.")
-            st.info("Se houver dúvida, procure a gestão.")
-            st.stop()
-
-    # ---------------------------------------------------------
-    # A PARTIR DAQUI, É SEGURO MOSTRAR OS CARDS
-    # ---------------------------------------------------------
-    for (chave, corr), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
-        grupo = grupo.sort_values("DIA").copy()
-        ultima = obter_status_atual(grupo)
-
-        nome_cli = ultima["NOME_CLIENTE_BASE"]
-        cpf_cli = ultima["CPF_CLIENTE_BASE"]
-        data_ult = (
-            ultima["DIA"].strftime("%d/%m/%Y")
-            if pd.notna(ultima["DIA"])
-            else ""
-        )
-        situacao_atual = ultima["SITUACAO_ORIGINAL"] or "NÃO INFORMADO"
-        corretor = ultima["CORRETOR"]
-        construtora = ultima.get("CONSTRUTORA", "") or "NÃO INFORMADO"
-        empreendimento = ultima.get("EMPREENDIMENTO", "") or "NÃO INFORMADO"
-
-        obs2 = (ultima.get("OBS2", "") or "").strip()
-        obs1 = (ultima.get("OBS", "") or "").strip()
-        ultima_obs = obs2 if obs2 else obs1
-
-        st.markdown("---")
-        st.markdown(f"### 👤 {nome_cli}")
-        st.write(f"**CPF:** `{'NÃO INFORMADO' if not cpf_cli else cpf_cli}`")
-        st.write(f"**Última movimentação:** `{data_ult}`")
-
-        st.markdown(
-            f"**Situação atual:** {badge_status(situacao_atual)}",
-            unsafe_allow_html=True,
-        )
-
-        st.write(f"**Corretor responsável:** `{corretor}`")
-        st.write(f"**Construtora:** `{construtora}`")
-        st.write(f"**Empreendimento:** `{empreendimento}`")
-
-        if ultima_obs:
-            st.markdown("**Última observação:**")
-            st.info(ultima_obs)
-
-        st.markdown("#### 📜 Histórico do cliente com este corretor")
-
-        df_hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
-
-        df_hist["DIA"] = df_hist["DIA"].dt.strftime("%d/%m/%Y")
-        for col in ["OBS", "OBS2"]:
-            df_hist[col] = (
-                df_hist[col]
-                .fillna("")
-                .astype(str)
-                .replace("nan", "")
-                .str.strip()
-            )
-
-        df_hist = df_hist.rename(
-            columns={
-                "DIA": "Data",
-                "SITUACAO_ORIGINAL": "Situação",
-                "OBS": "Obs",
-                "OBS2": "Obs 2",
-            }
-        )
-
-        st.dataframe(
-            df_hist,
-            use_container_width=True,
-            hide_index=True,
-        )
-
-
-            # ---------------- LINHA DO TEMPO ----------------
-            st.markdown("#### 📜 Histórico do cliente com este corretor")
-
-            df_hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
-
-            df_hist["DIA"] = df_hist["DIA"].dt.strftime("%d/%m/%Y")
-            for col in ["OBS", "OBS2"]:
-                df_hist[col] = (
-                    df_hist[col]
-                    .fillna("")
-                    .astype(str)
-                    .replace("nan", "")
-                    .str.strip()
-                )
-
-            df_hist = df_hist.rename(
-                columns={
-                    "DIA": "Data",
-                    "SITUACAO_ORIGINAL": "Situação",
-                    "OBS": "Obs",
-                    "OBS2": "Obs 2",
-                }
-            )
-
-            st.dataframe(
-                df_hist,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-else:
-    st.info("Digite o nome ou CPF acima para consultar um cliente.")
+    st.dataframe(hist, use_container_width=True, hide_index=True)

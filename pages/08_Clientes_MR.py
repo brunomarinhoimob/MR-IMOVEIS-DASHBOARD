@@ -6,6 +6,15 @@ if "logado" not in st.session_state or not st.session_state.logado:
     st.stop()
 
 from app_dashboard import carregar_dados_planilha
+# ---------------------------------------------------------
+# CONTEXTO DO USUÁRIO LOGADO
+# ---------------------------------------------------------
+perfil = st.session_state.get("perfil")
+nome_corretor_logado = (
+    st.session_state.get("nome_usuario", "")
+    .upper()
+    .strip()
+)
 
 st.set_page_config(
     page_title="Clientes MR",
@@ -294,51 +303,97 @@ if termo.strip():
         cpf_num = "".join(c for c in termo if c.isdigit())
         mask = df["CPF_CLIENTE_BASE"].str.contains(cpf_num, na=False)
 
-    resultado = df[mask].copy()
-
     if resultado.empty:
-        st.warning("Cliente não encontrado na base.")
-    else:
-        # Agrupa por cliente + corretor (história por corretor)
-        for (chave, corr), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
-            grupo = grupo.sort_values("DIA").copy()
-            ultima = obter_status_atual(grupo)
+    st.warning("Cliente não encontrado ou sem análise.")
+else:
+    # ---------------------------------------------------------
+    # VALIDA SE CLIENTE PERTENCE AO CORRETOR LOGADO
+    # ---------------------------------------------------------
+    if perfil == "corretor":
 
-            nome_cli = ultima["NOME_CLIENTE_BASE"]
-            cpf_cli = ultima["CPF_CLIENTE_BASE"]
-            data_ult = (
-                ultima["DIA"].strftime("%d/%m/%Y")
-                if pd.notna(ultima["DIA"])
-                else ""
+        pertence = (
+            resultado["CORRETOR"]
+            .str.upper()
+            .str.strip()
+            .eq(nome_corretor_logado)
+            .any()
+        )
+
+        if not pertence:
+            st.error("🚫 Cliente não pertence à sua carteira.")
+            st.info("Se houver dúvida, procure a gestão.")
+            st.stop()
+
+    # ---------------------------------------------------------
+    # A PARTIR DAQUI, É SEGURO MOSTRAR OS CARDS
+    # ---------------------------------------------------------
+    for (chave, corr), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
+        grupo = grupo.sort_values("DIA").copy()
+        ultima = obter_status_atual(grupo)
+
+        nome_cli = ultima["NOME_CLIENTE_BASE"]
+        cpf_cli = ultima["CPF_CLIENTE_BASE"]
+        data_ult = (
+            ultima["DIA"].strftime("%d/%m/%Y")
+            if pd.notna(ultima["DIA"])
+            else ""
+        )
+        situacao_atual = ultima["SITUACAO_ORIGINAL"] or "NÃO INFORMADO"
+        corretor = ultima["CORRETOR"]
+        construtora = ultima.get("CONSTRUTORA", "") or "NÃO INFORMADO"
+        empreendimento = ultima.get("EMPREENDIMENTO", "") or "NÃO INFORMADO"
+
+        obs2 = (ultima.get("OBS2", "") or "").strip()
+        obs1 = (ultima.get("OBS", "") or "").strip()
+        ultima_obs = obs2 if obs2 else obs1
+
+        st.markdown("---")
+        st.markdown(f"### 👤 {nome_cli}")
+        st.write(f"**CPF:** `{'NÃO INFORMADO' if not cpf_cli else cpf_cli}`")
+        st.write(f"**Última movimentação:** `{data_ult}`")
+
+        st.markdown(
+            f"**Situação atual:** {badge_status(situacao_atual)}",
+            unsafe_allow_html=True,
+        )
+
+        st.write(f"**Corretor responsável:** `{corretor}`")
+        st.write(f"**Construtora:** `{construtora}`")
+        st.write(f"**Empreendimento:** `{empreendimento}`")
+
+        if ultima_obs:
+            st.markdown("**Última observação:**")
+            st.info(ultima_obs)
+
+        st.markdown("#### 📜 Histórico do cliente com este corretor")
+
+        df_hist = grupo[["DIA", "SITUACAO_ORIGINAL", "OBS", "OBS2"]].copy()
+
+        df_hist["DIA"] = df_hist["DIA"].dt.strftime("%d/%m/%Y")
+        for col in ["OBS", "OBS2"]:
+            df_hist[col] = (
+                df_hist[col]
+                .fillna("")
+                .astype(str)
+                .replace("nan", "")
+                .str.strip()
             )
-            situacao_atual = ultima["SITUACAO_ORIGINAL"] or "NÃO INFORMADO"
-            corretor = ultima["CORRETOR"]
-            construtora = ultima.get("CONSTRUTORA", "") or "NÃO INFORMADO"
-            empreendimento = ultima.get("EMPREENDIMENTO", "") or "NÃO INFORMADO"
 
-            # OBS: sempre limpar possíveis 'nan'
-            obs2 = (ultima.get("OBS2", "") or "").strip()
-            obs1 = (ultima.get("OBS", "") or "").strip()
-            ultima_obs = obs2 if obs2 else obs1
+        df_hist = df_hist.rename(
+            columns={
+                "DIA": "Data",
+                "SITUACAO_ORIGINAL": "Situação",
+                "OBS": "Obs",
+                "OBS2": "Obs 2",
+            }
+        )
 
-            st.markdown("---")
-            st.markdown(f"### 👤 {nome_cli}")
-            st.write(f"**CPF:** `{'NÃO INFORMADO' if not cpf_cli else cpf_cli}`")
-            st.write(f"**Última movimentação:** `{data_ult}`")
+        st.dataframe(
+            df_hist,
+            use_container_width=True,
+            hide_index=True,
+        )
 
-            # Situação atual com BADGE
-            st.markdown(
-                f"**Situação atual:** {badge_status(situacao_atual)}",
-                unsafe_allow_html=True,
-            )
-
-            st.write(f"**Corretor responsável:** `{corretor}`")
-            st.write(f"**Construtora:** `{construtora}`")
-            st.write(f"**Empreendimento:** `{empreendimento}`")
-
-            if ultima_obs:
-                st.markdown("**Última observação:**")
-                st.info(ultima_obs)
 
             # ---------------- LINHA DO TEMPO ----------------
             st.markdown("#### 📜 Histórico do cliente com este corretor")

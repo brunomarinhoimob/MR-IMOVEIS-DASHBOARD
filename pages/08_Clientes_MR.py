@@ -58,8 +58,17 @@ def obter_status_atual(grupo):
     return grupo.iloc[-1]
 
 def formatar_observacao(linha):
+    texto = (
+        linha.get("OBSERVAÇÕES 2")
+        or linha.get("OBSERVAÇÕES")
+        or ""
+    )
 
-    return obs
+    texto = str(texto).strip()
+    if not texto:
+        return None
+
+    return texto
 
 # =========================================================
 # CARREGAR BASE
@@ -155,9 +164,10 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
 
     obs_final = formatar_observacao(ultima)
-    if obs_final:
-        st.markdown("**Última observação:**")
-        st.info(obs_final)
+
+if obs_final:
+    st.markdown("### 📝 Observação do cliente")
+    st.info(obs_final)
 
     # -------------------------
     # LINHA DO TEMPO

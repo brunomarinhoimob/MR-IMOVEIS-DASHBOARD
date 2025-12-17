@@ -27,7 +27,7 @@ nome_corretor_logado = (
 )
 
 # =========================================================
-# FUNÇÕES AUXILIARES
+# FUNÇÕES
 # =========================================================
 def badge_status(texto):
     texto = (texto or "").upper()
@@ -46,13 +46,37 @@ def badge_status(texto):
 
 def obter_status_atual(grupo):
     grupo = grupo.sort_values("DIA").copy()
+
     desist = grupo["SITUACAO_ORIGINAL"].str.contains("DESIST", na=False)
     if desist.any():
         grupo = grupo.loc[grupo[desist].index[-1]:]
+
     vendas = grupo[grupo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])]
     if not vendas.empty:
         return vendas.iloc[-1]
+
     return grupo.iloc[-1]
+
+def formatar_observacao(linha):
+    obs = (linha.get("OBS2") or linha.get("OBS") or "").strip()
+    if not obs:
+        return None
+
+    situacao = (linha.get("SITUACAO_ORIGINAL") or "").upper()
+
+    if "VENDA" in situacao:
+        try:
+            valor = float(
+                obs.replace("R$", "")
+                   .replace(".", "")
+                   .replace(",", ".")
+                   .strip()
+            )
+            return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except:
+            return obs
+
+    return obs
 
 # =========================================================
 # CARREGAR BASE
@@ -89,7 +113,7 @@ df = carregar_base()
 # =========================================================
 # BUSCA
 # =========================================================
-st.markdown("## 👥 Consulta de Clientes – MR")
+st.markdown("## 👥 Clientes – MR")
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -115,29 +139,20 @@ if nome_busca:
 resultado = df[mask].copy()
 
 # =========================================================
-# VALIDAÇÃO E FILTRO DE POSSE (REGRA FORTE)
+# TRAVA DE POSSE (PONTO-CHAVE)
 # =========================================================
 if perfil == "corretor":
+    resultado = resultado[resultado["CORRETOR"] == nome_corretor_logado]
 
-    resultado = resultado[
-        resultado["CORRETOR"].str.upper().str.strip()
-        == nome_corretor_logado
-    ]
-
-    if resultado.empty:
-        st.error("🚫 Cliente não pertence à sua carteira ou não possui análise com você.")
-        st.stop()
-
-if perfil == "corretor":
-    pertence = resultado["CORRETOR"].eq(nome_corretor_logado).any()
-    if not pertence:
-        st.error("🚫 Cliente não pertence à sua carteira.")
-        st.stop()
+if resultado.empty:
+    st.warning("⚠️ Cliente não encontrado ou não pertence à sua carteira.")
+    st.stop()
 
 # =========================================================
 # EXIBIÇÃO
 # =========================================================
 for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
+    grupo = grupo.sort_values("DIA").copy()
     ultima = obter_status_atual(grupo)
 
     st.markdown("---")
@@ -147,47 +162,23 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     if pd.notna(ultima["DIA"]):
         st.write(f"**Última movimentação:** {ultima['DIA'].strftime('%d/%m/%Y')}")
 
-    st.markdown(f"**Situação atual:** {badge_status(ultima['SITUACAO_ORIGINAL'])}", unsafe_allow_html=True)
-    st.write(f"**Corretor responsável:** `{ultima['CORRETOR']}`")
+    st.markdown(
+        f"**Situação atual:** {badge_status(ultima['SITUACAO_ORIGINAL'])}",
+        unsafe_allow_html=True
+    )
+
+    st.write(f"**Corretor:** `{ultima['CORRETOR']}`")
     st.write(f"**Construtora:** `{ultima['CONSTRUTORA'] or 'NÃO INFORMADO'}`")
     st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
 
-    # ---------------------------------------------------------
-# ÚLTIMA OBSERVAÇÃO (COM REGRA DE VENDA)
-# ---------------------------------------------------------
-obs_bruta = (
-    ultima.get("OBS2")
-    or ultima.get("OBS")
-    or ""
-)
+    obs_final = formatar_observacao(ultima)
+    if obs_final:
+        st.markdown("**Última observação:**")
+        st.info(obs_final)
 
-obs_bruta = str(obs_bruta).strip()
-
-if obs_bruta:
-    situacao = (ultima.get("SITUACAO_ORIGINAL") or "").upper()
-
-    # Se for venda, tenta formatar como dinheiro
-    if "VENDA" in situacao:
-        try:
-            valor = float(
-                obs_bruta
-                .replace("R$", "")
-                .replace(".", "")
-                .replace(",", ".")
-                .strip()
-            )
-            obs_formatada = f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except:
-            obs_formatada = obs_bruta
-    else:
-        obs_formatada = obs_bruta
-
-    st.markdown("**Última observação:**")
-    st.info(obs_formatada)
-
-    if obs:
-        st.info(obs)
-
+    # -------------------------
+    # LINHA DO TEMPO
+    # -------------------------
     cols_hist = ["DIA", "SITUACAO_ORIGINAL"]
     if "OBS" in grupo.columns:
         cols_hist.append("OBS")
@@ -197,4 +188,12 @@ if obs_bruta:
     hist = grupo[cols_hist].copy()
     hist["DIA"] = hist["DIA"].dt.strftime("%d/%m/%Y")
 
+    hist = hist.rename(columns={
+        "DIA": "Data",
+        "SITUACAO_ORIGINAL": "Situação",
+        "OBS": "Obs",
+        "OBS2": "Obs 2",
+    })
+
+    st.markdown("#### 📜 Linha do tempo do cliente")
     st.dataframe(hist, use_container_width=True, hide_index=True)

@@ -606,7 +606,7 @@ registros_filtrados = len(df_filtrado)
 # ---------------------------------------------------------
 # TÍTULO / CAPTION
 # ---------------------------------------------------------
-st.title("📊 Dashboard Imobiliária – MR Imóveis")
+st.title("📊 Painel comercial – MR Imóveis")
 
 if tipo_periodo == "DIA":
     label_periodo = "Período (DIA)"

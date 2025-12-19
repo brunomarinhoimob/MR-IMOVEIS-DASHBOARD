@@ -266,79 +266,13 @@ def carregar_dados_planilha():
 
     col_situacao = next((c for c in possiveis_cols if c in df.columns), None)
 
-    # ---------------------------------------------------------
-    # STATUS_RAW = TEXTO ORIGINAL (SEM NORMALIZAR)
-    # ---------------------------------------------------------
-    if col_situacao:
-        df["STATUS_RAW"] = (
-            df[col_situacao]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-    else:
-        df["STATUS_RAW"] = ""
+    @st.cache_data(ttl=60)
+def carregar_dados_planilha() -> pd.DataFrame:
+    df = pd.read_csv(CSV_URL)
+    df.columns = [c.strip().upper() for c in df.columns]
 
-    # ---------------------------------------------------------
-    # STATUS_BASE = STATUS NORMALIZADO (KPI / FUNIL)
-    # ---------------------------------------------------------
-    df["STATUS_BASE"] = ""
-
-    if col_situacao:
-        s = df[col_situacao].fillna("").astype(str).str.upper()
-
-        df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
-        df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[s.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
-        df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
-        df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
-        df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
-        df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
-
-    # ---------------------------------------------------------
-    # VGV
-    # ---------------------------------------------------------
-    if "OBSERVAÇÕES" in df.columns:
-        df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
-    else:
-        df["VGV"] = 0
-
-    # ---------------------------------------------------------
-    # NOME / CPF BASE
-    # ---------------------------------------------------------
-    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
-    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
-
-    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
-    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
-
-    if col_nome:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-    else:
-        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
-
-    if col_cpf:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
-    else:
-        df["CPF_CLIENTE_BASE"] = ""
-
-    # ---------------------------------------------------------
-    # CHAVE_CLIENTE (GLOBAL)
-    # ---------------------------------------------------------
-    df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"] + " | " + df["CPF_CLIENTE_BASE"]
-    )
+    # todo o tratamento aqui dentro
+    # tudo indentado
 
     return df
 

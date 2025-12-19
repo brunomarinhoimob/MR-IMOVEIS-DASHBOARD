@@ -58,36 +58,31 @@ def verificar_notificacoes(df: pd.DataFrame):
     for _, row in df.iterrows():
         chave = row["CHAVE_CLIENTE"]
         status_atual = row["STATUS_BASE"]
-        dia_atual = str(row["DIA"])
 
         if not status_atual:
             continue
 
         ultimo = cache_usuario.get(chave)
 
-        # compatibilidade com cache antigo (string)
+        # compatibilidade com cache antigo
         if isinstance(ultimo, str):
             ultimo_status = ultimo
-            ultimo_dia = None
         elif isinstance(ultimo, dict):
             ultimo_status = ultimo.get("status")
-            ultimo_dia = ultimo.get("dia")
         else:
             ultimo_status = None
-            ultimo_dia = None
 
         # NOVA LINHA + STATUS DIFERENTE = NOTIFICA
         if ultimo_status and ultimo_status != status_atual:
-    cliente = chave.split("|")[0].strip()
-    st.toast(
-        f"🔔 Cliente {cliente}\n{ultimo_status} → {status_atual}",
-        icon="🔔",
-    )
+            cliente = chave.split("|")[0].strip()
+            st.toast(
+                f"🔔 Cliente {cliente}\n{ultimo_status} → {status_atual}",
+                icon="🔔",
+            )
 
         # atualiza cache SEMPRE
         cache_usuario[chave] = {
-            "status": status_atual,
-            "dia": dia_atual,
+            "status": status_atual
         }
 
     cache[chave_cache] = cache_usuario

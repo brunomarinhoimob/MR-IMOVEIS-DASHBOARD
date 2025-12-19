@@ -248,9 +248,9 @@ def mes_ano_ptbr_para_date(valor: str):
 @st.cache_data(ttl=60)
 def carregar_dados_planilha():
     # ---------------------------------------------------------
-    # CARREGA PLANILHA
+    # CARREGA PLANILHA (USA FUNÇÃO EXISTENTE)
     # ---------------------------------------------------------
-    def carregar_dados_planilha():  # usa tua função existente
+    df = carregar_planilha()  # ⚠️ se o nome for diferente, ajusta só aqui
 
     if df is None or df.empty:
         return df

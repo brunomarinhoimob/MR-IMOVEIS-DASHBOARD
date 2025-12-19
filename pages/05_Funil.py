@@ -15,6 +15,13 @@ st.set_page_config(
     page_icon="🧩",
     layout="wide",
 )
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=30 * 1000, key="auto_refresh_funil")
+
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
 
 # ---------------------------------------------------------
 # BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)

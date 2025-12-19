@@ -5,6 +5,9 @@ from datetime import date, timedelta
 from utils.bootstrap import iniciar_app
 from app_dashboard import carregar_dados_planilha
 
+df = carregar_dados_planilha()
+iniciar_app(df)
+
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA (PRIMEIRA LINHA EXECUTADA)
 # ---------------------------------------------------------
@@ -13,6 +16,9 @@ st.set_page_config(
     page_icon="📂",
     layout="wide"
 )
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
 
 # ---------------------------------------------------------
 # BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)
@@ -20,11 +26,6 @@ st.set_page_config(
 df = carregar_dados_planilha()
 iniciar_app(df)
 
-st.set_page_config(
-    page_title="Carteira de Clientes",
-    page_icon="📂",
-    layout="wide"
-)
 
 # ---------------------------------------------------------
 # CONTEXTO DO USUÁRIO LOGADO (DEFINE ANTES DE QUALQUER USO)

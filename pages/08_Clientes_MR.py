@@ -6,20 +6,19 @@ from app_dashboard import carregar_dados_planilha
 df = carregar_dados_planilha()
 iniciar_app(df)
 
-# =========================================================
-# BLOQUEIO SEM LOGIN
-# =========================================================
-if "logado" not in st.session_state or not st.session_state.logado:
-    st.warning("🔒 Acesso restrito. Faça login para continuar.")
-    st.stop()
-
-from app_dashboard import carregar_dados_planilha
 
 st.set_page_config(
     page_title="Clientes MR",
     page_icon="👥",
     layout="wide"
 )
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=30 * 1000, key="auto_refresh_clientes")
+
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
 
 # =========================================================
 # CONTEXTO DO USUÁRIO

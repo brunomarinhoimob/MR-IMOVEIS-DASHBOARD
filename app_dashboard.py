@@ -3,9 +3,9 @@ import pandas as pd
 import requests
 from datetime import timedelta, datetime
 from login import tela_login
-from utils.notificacoes import verificar_notificacoes
-
 from utils.supremo_config import TOKEN_SUPREMO
+
+from utils.notificacoes import verificar_notificacoes  # 👈 ESSA LINHA
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA (LOGIN vs DASHBOARD)
@@ -373,6 +373,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
 
 
 df = carregar_dados_planilha()
+
 # ---------------------------------------------------------
 # NOTIFICAÇÕES GLOBAIS (APÓS CARGA DA PLANILHA)
 # ---------------------------------------------------------

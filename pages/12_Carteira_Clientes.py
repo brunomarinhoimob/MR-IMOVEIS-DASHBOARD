@@ -6,13 +6,19 @@ from utils.bootstrap import iniciar_app
 from app_dashboard import carregar_dados_planilha
 
 # ---------------------------------------------------------
-# BLOQUEIO SEM LOGIN
+# CONFIGURAÇÃO DA PÁGINA (PRIMEIRA LINHA EXECUTADA)
 # ---------------------------------------------------------
-if "logado" not in st.session_state or not st.session_state.logado:
-    st.warning("🔒 Acesso restrito. Faça login para continuar.")
-    st.stop()
+st.set_page_config(
+    page_title="Carteira de Clientes",
+    page_icon="📂",
+    layout="wide"
+)
 
-from app_dashboard import carregar_dados_planilha
+# ---------------------------------------------------------
+# BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)
+# ---------------------------------------------------------
+df = carregar_dados_planilha()
+iniciar_app(df)
 
 st.set_page_config(
     page_title="Carteira de Clientes",

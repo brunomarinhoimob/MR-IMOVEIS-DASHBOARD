@@ -77,12 +77,12 @@ def verificar_notificacoes(df: pd.DataFrame):
             ultimo_dia = None
 
         # NOVA LINHA + STATUS DIFERENTE = NOTIFICA
-        if ultimo_status and ultimo_status != status_atual and ultimo_dia != dia_atual:
-            cliente = chave.split("|")[0].strip()
-            st.toast(
-                f"🔔 Cliente {cliente}\n{ultimo_status} → {status_atual}",
-                icon="🔔",
-            )
+        if ultimo_status and ultimo_status != status_atual:
+    cliente = chave.split("|")[0].strip()
+    st.toast(
+        f"🔔 Cliente {cliente}\n{ultimo_status} → {status_atual}",
+        icon="🔔",
+    )
 
         # atualiza cache SEMPRE
         cache_usuario[chave] = {

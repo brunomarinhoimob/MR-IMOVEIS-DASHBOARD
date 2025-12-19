@@ -267,9 +267,8 @@ def carregar_dados_planilha():
     col_situacao = next((c for c in possiveis_cols if c in df.columns), None)
 
     @st.cache_data(ttl=60)
-@st.cache_data(ttl=60)
 def carregar_dados_planilha() -> pd.DataFrame:
-    df = carregar_planilha()  # 🔁 usa a função REAL que já existe no backup
+    df = carregar_planilha()  # ⚠️ usa a função REAL do backup
 
     if df is None or df.empty:
         return df
@@ -277,19 +276,14 @@ def carregar_dados_planilha() -> pd.DataFrame:
     possiveis_cols = [
         "SITUACAO", "SITUAÇÃO",
         "SITUACAO_BASE", "SITUAÇÃO_BASE",
-        "SITUAÇÃO DO CLIENTE", "SITUACAO DO CLIENTE"
+        "SITUAÇÃO DO CLIENTE", "SITUAÇÃO DO CLIENTE"
     ]
 
     col_situacao = next((c for c in possiveis_cols if c in df.columns), None)
 
     # STATUS RAW
     if col_situacao:
-        df["STATUS_RAW"] = (
-            df[col_situacao]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
+        df["STATUS_RAW"] = df[col_situacao].fillna("").astype(str).str.strip()
     else:
         df["STATUS_RAW"] = ""
 
@@ -306,13 +300,11 @@ def carregar_dados_planilha() -> pd.DataFrame:
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
         df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
-    # VGV
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
     else:
         df["VGV"] = 0
 
-    # NOME / CPF
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
@@ -320,29 +312,16 @@ def carregar_dados_planilha() -> pd.DataFrame:
     col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
     if col_nome:
-        df["NOME_CLIENTE_BASE"] = (
-            df[col_nome]
-            .fillna("NÃO INFORMADO")
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
+        df["NOME_CLIENTE_BASE"] = df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
     else:
         df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
 
     if col_cpf:
-        df["CPF_CLIENTE_BASE"] = (
-            df[col_cpf]
-            .fillna("")
-            .astype(str)
-            .str.replace(r"\D", "", regex=True)
-        )
+        df["CPF_CLIENTE_BASE"] = df[col_cpf].fillna("").astype(str).str.replace(r"\D", "", regex=True)
     else:
         df["CPF_CLIENTE_BASE"] = ""
 
-    df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"] + " | " + df["CPF_CLIENTE_BASE"]
-    )
+    df["CHAVE_CLIENTE"] = df["NOME_CLIENTE_BASE"] + " | " + df["CPF_CLIENTE_BASE"]
 
     return df
 

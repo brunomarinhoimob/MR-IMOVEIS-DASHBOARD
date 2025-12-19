@@ -250,7 +250,7 @@ def carregar_dados_planilha():
     # ---------------------------------------------------------
     # CARREGA PLANILHA
     # ---------------------------------------------------------
-    def carregar_dados_planilha()  # usa tua função existente
+    def carregar_dados_planilha():  # usa tua função existente
 
     if df is None or df.empty:
         return df

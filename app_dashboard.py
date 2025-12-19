@@ -374,6 +374,11 @@ def carregar_dados_planilha() -> pd.DataFrame:
 
 df = carregar_dados_planilha()
 # ---------------------------------------------------------
+# NOTIFICAÇÕES GLOBAIS (APÓS CARGA DA PLANILHA)
+# ---------------------------------------------------------
+verificar_notificacoes(df)
+
+# ---------------------------------------------------------
 # CONTEXTO DO USUÁRIO LOGADO
 # ---------------------------------------------------------
 perfil = st.session_state.get("perfil")

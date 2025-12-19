@@ -2,34 +2,34 @@ import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
 
-from utils.bootstrap import iniciar_app
-from app_dashboard import carregar_dados_planilha
-
-df = carregar_dados_planilha()
-iniciar_app(df)
-
 # ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA (PRIMEIRA LINHA EXECUTADA)
+# CONFIGURAÇÃO DA PÁGINA (PRIMEIRA COISA DO ARQUIVO)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Carteira de Clientes",
     page_icon="📂",
     layout="wide"
 )
-from streamlit_autorefresh import st_autorefresh
 
+from streamlit_autorefresh import st_autorefresh
 st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
 
 # ---------------------------------------------------------
-# BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)
+# IMPORTS DE NEGÓCIO
+# ---------------------------------------------------------
+from utils.bootstrap import iniciar_app
+from app_dashboard import carregar_dados_planilha
+
+# ---------------------------------------------------------
+# BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES) — UMA ÚNICA VEZ
 # ---------------------------------------------------------
 df = carregar_dados_planilha()
 iniciar_app(df)
 
+# ---------------------------------------------------------
+# CONTEXTO DO USUÁRIO LOGADO
+# ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# CONTEXTO DO USUÁRIO LOGADO (DEFINE ANTES DE QUALQUER USO)
-# ---------------------------------------------------------
 perfil = st.session_state.get("perfil")
 nome_corretor_logado = (
     st.session_state.get("nome_usuario", "")

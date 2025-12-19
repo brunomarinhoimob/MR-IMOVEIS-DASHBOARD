@@ -6,9 +6,16 @@ from login import tela_login
 
 
 def iniciar_app(df: pd.DataFrame):
-    # ---------------------------------------------------------
+    """
+    Bootstrap global do app:
+    - controla login
+    - executa notificações
+    - renderiza alertas fixos
+    """
+
+    # -------------------------------------------------
     # CONTROLE DE LOGIN (GLOBAL)
-    # ---------------------------------------------------------
+    # -------------------------------------------------
     if "logado" not in st.session_state:
         st.session_state.logado = False
 
@@ -16,21 +23,32 @@ def iniciar_app(df: pd.DataFrame):
         tela_login()
         st.stop()
 
-    # ---------------------------------------------------------
-    # EXECUTA NOTIFICAÇÕES (BACKEND)
-    # ---------------------------------------------------------
+    # -------------------------------------------------
+    # EXECUÇÃO DAS NOTIFICAÇÕES (BACKEND)
+    # -------------------------------------------------
     verificar_notificacoes(df)
 
-    # ---------------------------------------------------------
-    # ALERTAS FIXOS (FRONTEND – FECHAMENTO MANUAL)
-    # ---------------------------------------------------------
+    # -------------------------------------------------
+    # GARANTIA DE ESTRUTURA NO SESSION STATE
+    # -------------------------------------------------
     if "alertas_fixos" not in st.session_state:
         st.session_state["alertas_fixos"] = []
 
+    if "alertas_fixos_ids" not in st.session_state:
+        st.session_state["alertas_fixos_ids"] = set()
+
+    # -------------------------------------------------
+    # RENDERIZAÇÃO DOS ALERTAS FIXOS (FRONTEND)
+    # -------------------------------------------------
     if st.session_state["alertas_fixos"]:
+
         st.markdown("### 🔔 Atualizações Recentes")
 
-        for i, alerta in enumerate(list(st.session_state["alertas_fixos"])):
+        # copia segura (evita problema ao remover item)
+        alertas = list(st.session_state["alertas_fixos"])
+
+        for alerta in alertas:
+
             col1, col2 = st.columns([9, 1])
 
             with col1:
@@ -40,6 +58,16 @@ def iniciar_app(df: pd.DataFrame):
                 )
 
             with col2:
-                if st.button("❌", key=f"fechar_alerta_{i}"):
-                    st.session_state["alertas_fixos"].pop(i)
+                if st.button("❌", key=f"fechar_alerta_{alerta['id']}"):
+
+                    # remove o alerta visual
+                    st.session_state["alertas_fixos"] = [
+                        a for a in st.session_state["alertas_fixos"]
+                        if a["id"] != alerta["id"]
+                    ]
+
+                    # remove o id para não reaparecer
+                    if alerta["id"] in st.session_state["alertas_fixos_ids"]:
+                        st.session_state["alertas_fixos_ids"].remove(alerta["id"])
+
                     st.rerun()

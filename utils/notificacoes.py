@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import json
 from pathlib import Path
-from datetime import datetime
 
 # ---------------------------------------------------------
-# ARQUIVO DE CACHE LOCAL
+# CACHE LOCAL
 # ---------------------------------------------------------
 ARQ_STATUS = Path("utils/status_clientes_cache.json")
 
@@ -29,10 +28,11 @@ def _salvar_cache(cache: dict):
 
 
 # ---------------------------------------------------------
-# NOTIFICAÇÕES (NOVA LINHA = EVENTO)
+# NOTIFICAÇÕES
+# NOVA LINHA + STATUS DIFERENTE = EVENTO
 # ---------------------------------------------------------
 def verificar_notificacoes(df: pd.DataFrame):
-    if df.empty:
+    if df is None or df.empty:
         return
 
     perfil = st.session_state.get("perfil")
@@ -49,7 +49,6 @@ def verificar_notificacoes(df: pd.DataFrame):
     if df.empty:
         return
 
-    # ordena histórico
     df = df.sort_values("DIA")
 
     cache = _carregar_cache()
@@ -58,34 +57,37 @@ def verificar_notificacoes(df: pd.DataFrame):
 
     for _, row in df.iterrows():
         chave = row["CHAVE_CLIENTE"]
-        status = row["STATUS_BASE"]
-        dia = str(row["DIA"])
+        status_atual = row["STATUS_BASE"]
+        dia_atual = str(row["DIA"])
 
-        if not status:
+        if not status_atual:
             continue
 
         ultimo = cache_usuario.get(chave)
 
-if ultimo:
-    # compatibilidade com cache antigo (string)
-    if isinstance(ultimo, str):
-        ultimo_status = ultimo
-        ultimo_dia = None
-    else:
-        ultimo_status = ultimo.get("status")
-        ultimo_dia = ultimo.get("dia")
+        # compatibilidade com cache antigo (string)
+        if isinstance(ultimo, str):
+            ultimo_status = ultimo
+            ultimo_dia = None
+        elif isinstance(ultimo, dict):
+            ultimo_status = ultimo.get("status")
+            ultimo_dia = ultimo.get("dia")
+        else:
+            ultimo_status = None
+            ultimo_dia = None
 
-    if ultimo_status != status and ultimo_dia != dia:
-        cliente = chave.split("|")[0].strip()
-        st.toast(
-            f"🔔 Cliente {cliente}\n{ultimo_status} → {status}",
-            icon="🔔",
-        )
+        # NOVA LINHA + STATUS DIFERENTE = NOTIFICA
+        if ultimo_status and ultimo_status != status_atual and ultimo_dia != dia_atual:
+            cliente = chave.split("|")[0].strip()
+            st.toast(
+                f"🔔 Cliente {cliente}\n{ultimo_status} → {status_atual}",
+                icon="🔔",
+            )
 
-        # atualiza cache sempre
+        # atualiza cache SEMPRE
         cache_usuario[chave] = {
-            "status": status,
-            "dia": dia,
+            "status": status_atual,
+            "dia": dia_atual,
         }
 
     cache[chave_cache] = cache_usuario

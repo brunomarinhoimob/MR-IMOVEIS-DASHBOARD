@@ -19,7 +19,7 @@ if "logado" not in st.session_state or not st.session_state.logado:
     )
 else:
     st.set_page_config(
-        page_title="Dashboard Imobiliária – MR Imóveis",
+        page_title="Comercial Imobiliária – MR Imóveis",
         page_icon="🏠",
         layout="wide"
     )
@@ -312,6 +312,27 @@ def carregar_dados_planilha() -> pd.DataFrame:
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
+# ---------------------------------------------------------
+# STATUS_RAW = TEXTO ORIGINAL DA SITUAÇÃO (SEM NORMALIZAR)
+# (usado para notificações)
+# ---------------------------------------------------------
+# tenta achar a coluna real de situação
+possiveis_cols = ["SITUACAO", "SITUAÇÃO", "SITUACAO_BASE", "SITUAÇÃO_BASE", "SITUAÇÃO DO CLIENTE", "SITUACAO DO CLIENTE"]
+col_situacao = None
+for c in possiveis_cols:
+    if c in df.columns:
+        col_situacao = c
+        break
+
+if col_situacao:
+    df["STATUS_RAW"] = df[col_situacao].fillna("").astype(str).str.strip()
+else:
+    # fallback: se não achar coluna de situação, usa STATUS_BASE se existir
+    if "STATUS_BASE" in df.columns:
+        df["STATUS_RAW"] = df["STATUS_BASE"].fillna("").astype(str).str.strip()
+    else:
+        df["STATUS_RAW"] = ""
+
     df["STATUS_BASE"] = ""
     if col_situacao:
         s = df[col_situacao].fillna("").astype(str).str.upper()
@@ -369,11 +390,6 @@ def carregar_dados_planilha() -> pd.DataFrame:
 
 
 df = carregar_dados_planilha()
-
-# ---------------------------------------------------------
-# NOTIFICAÇÕES GLOBAIS (APÓS CARGA DA PLANILHA)
-# ---------------------------------------------------------
-verificar_notificacoes(df)
 
 # ---------------------------------------------------------
 # CONTEXTO DO USUÁRIO LOGADO

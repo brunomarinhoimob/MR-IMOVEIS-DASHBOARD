@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 # Bootstrap inicial (só pra popular o users.json na primeira vez / quando faltar gente)
-from auth_users import USUARIOS
+from utils.auth_users import USUARIOS
 
 CAMINHO_USERS = Path("users.json")
 

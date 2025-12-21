@@ -389,20 +389,24 @@ nome_corretor_logado = str(nome_corretor_logado).upper().strip()
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
 # ---------------------------------------------------------
 if perfil == "corretor":
+    # login vem assim: luana.braga
+    usuario_login = st.session_state.get("usuario", "")
+
+    # transforma para padrão da planilha: LUANA BRAGA
     nome_corretor_logado = (
-        st.session_state.get("usuario")
-        or st.session_state.get("nome")
-        or ""
+        str(usuario_login)
+        .replace(".", " ")
+        .upper()
+        .strip()
     )
 
-    nome_corretor_logado = str(nome_corretor_logado).upper().strip()
-
+    # normaliza coluna da planilha também
     df["CORRETOR"] = (
-    df["CORRETOR"]
-    .astype(str)
-    .str.upper()
-    .str.strip()
-)
+        df["CORRETOR"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
     df = df[df["CORRETOR"] == nome_corretor_logado]
 

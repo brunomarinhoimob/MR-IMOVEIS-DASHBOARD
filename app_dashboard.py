@@ -371,6 +371,11 @@ def carregar_dados_planilha() -> pd.DataFrame:
 # ---------------------------------------------------------
 if perfil == "corretor":
     if "CORRETOR" in df.columns:
+        # =========================================================
+# CARREGA BASE PRINCIPAL
+# =========================================================
+df = carregar_dados_planilha()
+
         df = df[df["CORRETOR"] == nome_corretor_logado]
 
 if df.empty:

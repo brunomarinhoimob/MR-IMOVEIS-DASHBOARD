@@ -22,7 +22,12 @@ def gerar_senha(nome: str) -> str:
 USUARIOS = {
     "bruno.marinho": {
         "nome": "BRUNO MARINHO",
-        "senha": "511712bm",
+        "senha": "Bruno123",
+        "perfil": "admin"
+    },
+        "bruno.admin2": {
+        "nome": "BRUNO MARINHO (NOVO)",
+        "senha": "bruno1234",
         "perfil": "admin"
     },
     "djacir.adm": {

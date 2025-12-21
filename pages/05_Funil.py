@@ -15,27 +15,9 @@ st.set_page_config(
     page_icon="🧩",
     layout="wide",
 )
-from utils.notificacoes import obter_notificacoes
 from streamlit_autorefresh import st_autorefresh
 
-st_autorefresh(interval=30 * 1000, key="refresh_notificacoes")
-
-st.subheader("🔔 Notificações")
-
-df_notif = obter_notificacoes()
-
-if df_notif.empty:
-    st.info("Nenhuma notificação ainda.")
-else:
-    for _, n in df_notif.iterrows():
-        st.markdown(
-            f"""
-            **{n['CLIENTE']}**  
-            {n['TIPO']} — **{n['SITUACAO']}**  
-            <small>{n['DATA_HORA']}</small>
-            """,
-            unsafe_allow_html=True
-        )
+st_autorefresh(interval=30 * 1000, key="auto_refresh_funil")
 
 # ---------------------------------------------------------
 # BOOTSTRAP (LOGIN + NOTIFICAÇÕES)

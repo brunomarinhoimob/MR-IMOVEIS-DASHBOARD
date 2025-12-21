@@ -263,7 +263,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
     else:
         df["DIA"] = pd.NaT
 
-    # DATA BASE (MÊS COMERCIAL)
+    # DATA BASE (MÊS COMERCIAL) - TEXTO IGUAL À PLANILHA + REFERÊNCIA DE DATA
     possiveis_cols_base = [
         "DATA BASE",
         "DATA_BASE",
@@ -303,7 +303,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
         else:
             df[col] = "NÃO INFORMADO"
 
-    # SITUAÇÃO
+    # STATUS BASE
     possiveis_cols_situacao = [
         "SITUAÇÃO",
         "SITUAÇÃO ATUAL",
@@ -313,18 +313,6 @@ def carregar_dados_planilha() -> pd.DataFrame:
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
-    # 👉 SITUAÇÃO EXATA (FONTE DA VERDADE)
-    if col_situacao:
-        df["SITUACAO_EXATA"] = (
-            df[col_situacao]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
-    else:
-        df["SITUACAO_EXATA"] = ""
-
-    # STATUS_BASE (resumido)
     df["STATUS_BASE"] = ""
     if col_situacao:
         s = df[col_situacao].fillna("").astype(str).str.upper()
@@ -334,6 +322,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
         df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
+        # 👇 NOVO – mapeia qualquer coisa com DESIST (DESISTIU, DESISTÊNCIA etc.)
         df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
     # VGV
@@ -342,83 +331,71 @@ def carregar_dados_planilha() -> pd.DataFrame:
     else:
         df["VGV"] = 0
 
-    # NOME / CPF
+    # NOME / CPF BASE
     possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
     possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
     col_nome = next((c for c in possiveis_nome if c in df.columns), None)
     col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
-    df["NOME_CLIENTE_BASE"] = (
-        df[col_nome].fillna("NÃO INFORMADO").astype(str).str.upper().str.strip()
-        if col_nome else "NÃO INFORMADO"
-    )
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
-    df["CPF_CLIENTE_BASE"] = (
-        df[col_cpf].fillna("").astype(str).str.replace(r"\D", "", regex=True)
-        if col_cpf else ""
-    )
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
 
-    # CHAVE_CLIENTE
+    # 👇 NOVO – CHAVE_CLIENTE global (nome + CPF) para todas as regras
     df["CHAVE_CLIENTE"] = (
-        df["NOME_CLIENTE_BASE"] + " | " + df["CPF_CLIENTE_BASE"]
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("")
     )
 
     return df
 
-# ---------------------------------------------------------
-# CARREGA BASE PRINCIPAL
-# ---------------------------------------------------------
+
+# carrega a base (você vai usar no painel)
 df = carregar_dados_planilha()
-from utils.notificacoes import gerar_notificacoes
 
-gerar_notificacoes(df)
+# chama o bootstrap (ele cuida das notificações)
+from utils.bootstrap import iniciar_app
+iniciar_app()
+
 
 # ---------------------------------------------------------
-# NOME DO CORRETOR LOGADO (vem do login)
+# CONTEXTO DO USUÁRIO LOGADO
 # ---------------------------------------------------------
+perfil = st.session_state.get("perfil")
 nome_corretor_logado = (
-    st.session_state.get("nome_corretor_logado")
-    or st.session_state.get("nome_corretor")
-    or st.session_state.get("usuario")
-    or st.session_state.get("username")
-    or st.session_state.get("nome")
-    or st.session_state.get("user")
-    or ""
+    st.session_state.get("nome_usuario", "")
+    .upper()
+    .strip()
 )
-
-nome_corretor_logado = str(nome_corretor_logado).upper().strip()
 
 # ---------------------------------------------------------
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
 # ---------------------------------------------------------
 if perfil == "corretor":
-    # login vem assim: luana.braga
-    usuario_login = st.session_state.get("usuario", "")
+    if "CORRETOR" in df.columns:
+        df = df[df["CORRETOR"] == nome_corretor_logado]
 
-    # transforma para padrão da planilha: LUANA BRAGA
-    nome_corretor_logado = (
-        str(usuario_login)
-        .replace(".", " ")
-        .upper()
-        .strip()
-    )
-
-    # normaliza coluna da planilha também
-    df["CORRETOR"] = (
-        df["CORRETOR"]
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
-
-    df = df[df["CORRETOR"] == nome_corretor_logado]
-
-# ---------------------------------------------------------
-# VALIDAÇÃO DA BASE
-# ---------------------------------------------------------
 if df.empty:
-    st.warning("Nenhum registro encontrado para este corretor.")
+    st.error("Erro ao carregar planilha.")
     st.stop()
 
 # 👇 NOVO – STATUS FINAL DO CLIENTE (HISTÓRICO COMPLETO DA PLANILHA)

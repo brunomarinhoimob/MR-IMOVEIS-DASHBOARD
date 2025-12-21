@@ -313,9 +313,7 @@ def carregar_dados_planilha() -> pd.DataFrame:
     ]
     col_situacao = next((c for c in possiveis_cols_situacao if c in df.columns), None)
 
-# carrega a base (você vai usar no painel)
-df = carregar_dados_planilha()
-# =========================================================
+    # =========================================================
     # SITUAÇÃO EXATA DA PLANILHA (FONTE DA VERDADE)
     # =========================================================
     if col_situacao == "SITUAÇÃO":
@@ -328,7 +326,9 @@ df = carregar_dados_planilha()
     else:
         df["SITUACAO_EXATA"] = ""
 
-    # 👇 TODO ESSE BLOCO JÁ EXISTIA NO TEU CÓDIGO
+    # =========================================================
+    # STATUS_BASE (RESUMIDO – USADO EM KPIs / FUNIL)
+    # =========================================================
     df["STATUS_BASE"] = ""
     if col_situacao:
         s = df[col_situacao].fillna("").astype(str).str.upper()
@@ -340,31 +340,53 @@ df = carregar_dados_planilha()
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
         df.loc[s.str.contains("DESIST"), "STATUS_BASE"] = "DESISTIU"
 
+    # =========================================================
     # VGV
+    # =========================================================
     if "OBSERVAÇÕES" in df.columns:
         df["VGV"] = pd.to_numeric(df["OBSERVAÇÕES"], errors="coerce").fillna(0)
     else:
         df["VGV"] = 0
 
+    # =========================================================
     # NOME / CPF BASE
-    ...
-    df["CHAVE_CLIENTE"] = ...
+    # =========================================================
+    possiveis_nome = ["NOME", "CLIENTE", "NOME CLIENTE", "NOME DO CLIENTE"]
+    possiveis_cpf = ["CPF", "CPF CLIENTE", "CPF DO CLIENTE"]
 
-    return df
-# chama o bootstrap (ele cuida das notificações)
-from utils.bootstrap import iniciar_app
-iniciar_app()
+    col_nome = next((c for c in possiveis_nome if c in df.columns), None)
+    col_cpf = next((c for c in possiveis_cpf if c in df.columns), None)
 
+    if col_nome is None:
+        df["NOME_CLIENTE_BASE"] = "NÃO INFORMADO"
+    else:
+        df["NOME_CLIENTE_BASE"] = (
+            df[col_nome]
+            .fillna("NÃO INFORMADO")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
-# ---------------------------------------------------------
-# CONTEXTO DO USUÁRIO LOGADO
-# ---------------------------------------------------------
-perfil = st.session_state.get("perfil")
-nome_corretor_logado = (
-    st.session_state.get("nome_usuario", "")
-    .upper()
-    .strip()
-)
+    if col_cpf is None:
+        df["CPF_CLIENTE_BASE"] = ""
+    else:
+        df["CPF_CLIENTE_BASE"] = (
+            df[col_cpf]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+
+    # =========================================================
+    # CHAVE_CLIENTE GLOBAL
+    # =========================================================
+    df["CHAVE_CLIENTE"] = (
+        df["NOME_CLIENTE_BASE"].fillna("NÃO INFORMADO")
+        + " | "
+        + df["CPF_CLIENTE_BASE"].fillna("")
+    )
+
 
 # ---------------------------------------------------------
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR

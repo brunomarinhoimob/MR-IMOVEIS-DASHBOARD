@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import timedelta
 
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import pandas as pd
 
 # =========================================================
@@ -23,6 +24,8 @@ st.set_page_config(
     page_icon="📂",
     layout="wide"
 )
+# Auto refresh
+st_autorefresh(interval=30 * 1000, key="auto_refresh_carteira")
 
 iniciar_app()
 

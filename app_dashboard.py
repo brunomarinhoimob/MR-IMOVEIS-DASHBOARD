@@ -389,13 +389,23 @@ nome_corretor_logado = str(nome_corretor_logado).upper().strip()
 # BLOQUEIO GLOBAL DE DADOS PARA PERFIL CORRETOR
 # ---------------------------------------------------------
 if perfil == "corretor":
+    nome_corretor_logado = (
+        st.session_state.get("usuario")
+        or st.session_state.get("nome")
+        or ""
+    )
+
+    nome_corretor_logado = str(nome_corretor_logado).upper().strip()
+
+    df["CORRETOR"] = df["CORRETOR"].astype(str).upper().strip()
+
     df = df[df["CORRETOR"] == nome_corretor_logado]
 
 # ---------------------------------------------------------
 # VALIDAÇÃO DA BASE
 # ---------------------------------------------------------
 if df.empty:
-    st.error("Erro ao carregar planilha.")
+    st.warning("Nenhum registro encontrado para este corretor.")
     st.stop()
 
 # 👇 NOVO – STATUS FINAL DO CLIENTE (HISTÓRICO COMPLETO DA PLANILHA)

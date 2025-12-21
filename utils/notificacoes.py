@@ -32,42 +32,75 @@ def _garantir_arquivos():
             "SITUACAO"
         ]).to_csv(ARQ_NOTIF, index=False)
 
-
 # =========================================================
-# GERAR NOTIFICAÇÕES
+# FUNÇÃO PRINCIPAL
 # =========================================================
 def gerar_notificacoes(df_atual: pd.DataFrame):
     _garantir_arquivos()
 
-    if df_atual.empty:
+    if df_atual is None or df_atual.empty:
         return
 
-    df_estado_ant = pd.read_csv(ARQ_ESTADO)
-    notificacoes = pd.read_csv(ARQ_NOTIF)
+    # ================= NORMALIZAÇÃO DE COLUNAS =================
+    df = df_atual.copy()
 
-    # Normalizações mínimas
-    for col in ["CLIENTE", "CPF", "SITUACAO"]:
-        if col in df_atual.columns:
-            df_atual[col] = df_atual[col].astype(str).str.strip()
+    # Mapa de colunas ignorando acento / caixa
+    col_map = {c.upper().strip(): c for c in df.columns}
 
-    # Criar chave única
-    df_atual["CHAVE"] = df_atual.apply(
-        lambda x: x["CPF"] if x.get("CPF") not in ["", "nan", "None"] else x["CLIENTE"],
+    def pegar_coluna(nome):
+        return col_map.get(nome)
+
+    COL_CLIENTE = pegar_coluna("CLIENTE")
+    COL_CPF = pegar_coluna("CPF")
+    COL_SITUACAO = pegar_coluna("SITUACAO") or pegar_coluna("SITUAÇÃO")
+
+    # Segurança absoluta
+    if not COL_CLIENTE or not COL_SITUACAO:
+        return
+
+    # ================= NORMALIZA DADOS =================
+    df["CLIENTE_N"] = df[COL_CLIENTE].astype(str).str.strip()
+    df["CPF_N"] = (
+        df[COL_CPF].astype(str).str.strip()
+        if COL_CPF else ""
+    )
+    df["SITUACAO_N"] = df[COL_SITUACAO].astype(str).str.strip()
+
+    # Remove linhas inválidas
+    df = df[
+        (df["CLIENTE_N"] != "") &
+        (df["CLIENTE_N"].str.upper() != "CLIENTE TESTE") &
+        (df["SITUACAO_N"] != "")
+    ]
+
+    if df.empty:
+        return
+
+    # ================= CHAVE ÚNICA =================
+    df["CHAVE"] = df.apply(
+        lambda x: x["CPF_N"]
+        if x["CPF_N"] not in ["", "nan", "None"]
+        else x["CLIENTE_N"],
         axis=1
     )
 
-    estado_map = df_estado_ant.set_index("CHAVE")["SITUACAO"].to_dict()
+    # ================= LE ESTADO ANTERIOR =================
+    df_estado_ant = pd.read_csv(ARQ_ESTADO)
+    df_notif = pd.read_csv(ARQ_NOTIF)
+
+    estado_map = (
+        df_estado_ant.set_index("CHAVE")["SITUACAO"].to_dict()
+        if not df_estado_ant.empty else {}
+    )
 
     novas_notificacoes = []
 
-    for _, row in df_atual.iterrows():
-        cliente = row.get("CLIENTE", "").strip()
-        situacao = row.get("SITUACAO", "").strip()
-        cpf = row.get("CPF", "").strip()
-        chave = row.get("CHAVE")
-
-        if not cliente or not situacao:
-            continue
+    # ================= DETECTA EVENTOS =================
+    for _, row in df.iterrows():
+        chave = row["CHAVE"]
+        cliente = row["CLIENTE_N"]
+        cpf = row["CPF_N"]
+        situacao = row["SITUACAO_N"]
 
         situacao_ant = estado_map.get(chave)
 
@@ -91,21 +124,29 @@ def gerar_notificacoes(df_atual: pd.DataFrame):
                 "SITUACAO": situacao
             })
 
+    # ================= SALVA NOTIFICAÇÕES =================
     if novas_notificacoes:
-        notificacoes = pd.concat(
-            [pd.DataFrame(novas_notificacoes), notificacoes],
+        df_notif = pd.concat(
+            [pd.DataFrame(novas_notificacoes), df_notif],
             ignore_index=True
         )
+        df_notif.to_csv(ARQ_NOTIF, index=False)
 
-        notificacoes.to_csv(ARQ_NOTIF, index=False)
+    # ================= ATUALIZA ESTADO =================
+    df_estado_novo = (
+        df[["CHAVE", "CLIENTE_N", "CPF_N", "SITUACAO_N"]]
+        .rename(columns={
+            "CLIENTE_N": "CLIENTE",
+            "CPF_N": "CPF",
+            "SITUACAO_N": "SITUACAO"
+        })
+        .drop_duplicates()
+    )
 
-    # Atualiza estado anterior
-    df_atual[["CHAVE", "CLIENTE", "CPF", "SITUACAO"]].drop_duplicates() \
-        .to_csv(ARQ_ESTADO, index=False)
-
+    df_estado_novo.to_csv(ARQ_ESTADO, index=False)
 
 # =========================================================
-# LER NOTIFICAÇÕES
+# LEITURA DAS NOTIFICAÇÕES
 # =========================================================
 def obter_notificacoes(qtd=20):
     if not ARQ_NOTIF.exists():

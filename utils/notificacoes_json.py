@@ -31,6 +31,19 @@ def _salvar_json(caminho: Path, data: dict):
     with open(caminho, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
+# -------------------------------------------------
+# STATUS VÁLIDOS (SEMÂNTICA OFICIAL DO SISTEMA)
+# -------------------------------------------------
+STATUS_VALIDOS = {
+    "EM ANÁLISE",
+    "REANÁLISE",
+    "APROVADO",
+    "APROVADO BACEN",
+    "REPROVADO",
+    "VENDA GERADA",
+    "VENDA INFORMADA",
+    "DESISTIU",
+}
 
 # -------------------------------------------------
 # DETECTOR DE EVENTOS
@@ -73,6 +86,11 @@ def processar_eventos(df: pd.DataFrame):
     for _, row in ultimos.iterrows():
         chave = row["CHAVE_CLIENTE"]
         status_atual = row["STATUS_BASE"]
+        # valida status antes de persistir
+if status_atual not in STATUS_VALIDOS:
+    raise ValueError(
+        f"Status inválido detectado em notificações: {status_atual}"
+    )
         corretor = row["CORRETOR"]
         cliente = chave.split("|")[0].strip()
 

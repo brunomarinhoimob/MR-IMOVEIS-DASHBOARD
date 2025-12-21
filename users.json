@@ -253,5 +253,10 @@
     "nome": "REBEKA GONÇALVES",
     "senha": "Rebeka123",
     "perfil": "corretor"
+  },
+  "bruno.admin2": {
+    "nome": "BRUNO MARINHO (NOVO)",
+    "senha": "bruno1234",
+    "perfil": "admin"
   }
 }

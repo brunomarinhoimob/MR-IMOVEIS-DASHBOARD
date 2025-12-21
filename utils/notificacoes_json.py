@@ -1,161 +1,119 @@
-import json
-import uuid
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
-import pandas as pd
 
-# =================================================
-# CAMINHOS DOS DADOS
-# =================================================
-BASE_DIR = Path("data")
-ARQ_NOTIFICACOES = BASE_DIR / "notificacoes.json"
-ARQ_SNAPSHOT = BASE_DIR / "snapshot_clientes.json"
+# =========================================================
+# CAMINHOS
+# =========================================================
+PASTA_DATA = Path("data")
+ARQ_ESTADO = PASTA_DATA / "estado_anterior_clientes.csv"
+ARQ_NOTIF = PASTA_DATA / "notificacoes.csv"
 
-# =================================================
-# UTILIDADES JSON
-# =================================================
-def _ler_json(caminho: Path) -> dict:
-    if caminho.exists():
-        try:
-            with open(caminho, "r", encoding="utf-8") as f:
-                return json.load(f) or {}
-        except Exception:
-            return {}
-    return {}
+# =========================================================
+# GARANTIR ESTRUTURA
+# =========================================================
+def _garantir_arquivos():
+    PASTA_DATA.mkdir(exist_ok=True)
 
-def _salvar_json(caminho: Path, data: dict):
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    with open(caminho, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    if not ARQ_ESTADO.exists():
+        pd.DataFrame(columns=[
+            "CHAVE",
+            "CLIENTE",
+            "CPF",
+            "SITUACAO"
+        ]).to_csv(ARQ_ESTADO, index=False)
 
-# =================================================
-# STATUS REAL DO CLIENTE (MESMA LÓGICA DA 08_CLIENTES_MR)
-# =================================================
-def obter_status_atual_cliente(grupo: pd.DataFrame) -> pd.Series | None:
-    grupo = grupo.copy()
+    if not ARQ_NOTIF.exists():
+        pd.DataFrame(columns=[
+            "DATA_HORA",
+            "CLIENTE",
+            "CPF",
+            "TIPO",
+            "SITUACAO"
+        ]).to_csv(ARQ_NOTIF, index=False)
 
-    if "DIA" not in grupo.columns:
-        return None
 
-    grupo = grupo[grupo["DIA"].notna()]
-    if grupo.empty:
-        return None
+# =========================================================
+# GERAR NOTIFICAÇÕES
+# =========================================================
+def gerar_notificacoes(df_atual: pd.DataFrame):
+    _garantir_arquivos()
 
-    grupo = grupo.sort_values("DIA")
-
-    # se houve desistência, ignora histórico anterior
-    desist_mask = grupo["SITUACAO_EXATA"].str.contains("DESIST", na=False)
-    if desist_mask.any():
-        idx = grupo[desist_mask].index[-1]
-        grupo = grupo.loc[idx:]
-
-    # prioridade absoluta para venda
-    vendas = grupo[grupo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])]
-    if not vendas.empty:
-        return vendas.iloc[-1]
-
-    # caso normal: último estado válido
-    return grupo.iloc[-1]
-
-# =================================================
-# PROCESSADOR DE EVENTOS (NOTIFICAÇÕES)
-# =================================================
-def processar_eventos(df: pd.DataFrame):
-    """
-    Gera notificações persistentes quando:
-    - um cliente aparece pela primeira vez
-    - o STATUS REAL do cliente muda
-
-    Usa SITUACAO_EXATA como fonte da verdade.
-    """
-
-    if df is None or df.empty:
+    if df_atual.empty:
         return
 
-    colunas_necessarias = {
-        "CHAVE_CLIENTE",
-        "CORRETOR",
-        "SITUACAO_EXATA",
-        "STATUS_BASE",
-        "DIA",
-    }
+    df_estado_ant = pd.read_csv(ARQ_ESTADO)
+    notificacoes = pd.read_csv(ARQ_NOTIF)
 
-    if not colunas_necessarias.issubset(df.columns):
-        return
+    # Normalizações mínimas
+    for col in ["CLIENTE", "CPF", "SITUACAO"]:
+        if col in df_atual.columns:
+            df_atual[col] = df_atual[col].astype(str).str.strip()
 
-    # normalizações básicas
-    df = df.copy()
-    df["CORRETOR"] = df["CORRETOR"].astype(str).str.upper().str.strip()
-    df["STATUS_BASE"] = df["STATUS_BASE"].astype(str).str.upper().str.strip()
-    df["SITUACAO_EXATA"] = df["SITUACAO_EXATA"].astype(str).str.strip()
+    # Criar chave única
+    df_atual["CHAVE"] = df_atual.apply(
+        lambda x: x["CPF"] if x.get("CPF") not in ["", "nan", "None"] else x["CLIENTE"],
+        axis=1
+    )
 
-    # -------------------------
-    # Estado salvo
-    # -------------------------
-    notificacoes = _ler_json(ARQ_NOTIFICACOES)
-    snapshot = _ler_json(ARQ_SNAPSHOT)
+    estado_map = df_estado_ant.set_index("CHAVE")["SITUACAO"].to_dict()
 
-    agora = datetime.now().isoformat(timespec="seconds")
-    novo_snapshot = {}
+    novas_notificacoes = []
 
-    # -------------------------
-    # Processa cliente por cliente
-    # -------------------------
-    for chave, grupo in df.groupby("CHAVE_CLIENTE"):
-        status_row = obter_status_atual_cliente(grupo)
-        if status_row is None:
+    for _, row in df_atual.iterrows():
+        cliente = row.get("CLIENTE", "").strip()
+        situacao = row.get("SITUACAO", "").strip()
+        cpf = row.get("CPF", "").strip()
+        chave = row.get("CHAVE")
+
+        if not cliente or not situacao:
             continue
 
-        status_atual = status_row["SITUACAO_EXATA"]
-        corretor = status_row["CORRETOR"]
-        cliente = chave.split("|")[0].strip()
+        situacao_ant = estado_map.get(chave)
 
-        if not status_atual:
-            continue
-
-        # garante estrutura por corretor
-        if corretor not in notificacoes:
-            notificacoes[corretor] = []
-
-        estado_antigo = snapshot.get(chave)
-
-        # -------------------------
-        # CLIENTE NOVO
-        # -------------------------
-        if not estado_antigo:
-            notificacoes[corretor].append({
-                "id": str(uuid.uuid4()),
-                "cliente": cliente,
-                "status": status_atual,
-                "tipo": "NOVO_CLIENTE",
-                "timestamp": agora,
-                "lido": False
+        # 🟢 CLIENTE NOVO
+        if situacao_ant is None:
+            novas_notificacoes.append({
+                "DATA_HORA": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "CLIENTE": cliente,
+                "CPF": cpf,
+                "TIPO": "CLIENTE NOVO",
+                "SITUACAO": situacao
             })
 
-        # -------------------------
-        # MUDANÇA DE STATUS REAL
-        # -------------------------
-        elif estado_antigo.get("status") != status_atual:
-            notificacoes[corretor].append({
-                "id": str(uuid.uuid4()),
-                "cliente": cliente,
-                "de": estado_antigo.get("status"),
-                "para": status_atual,
-                "tipo": "MUDANCA_STATUS",
-                "timestamp": agora,
-                "lido": False
+        # 🔵 MUDANÇA DE SITUAÇÃO
+        elif situacao_ant != situacao:
+            novas_notificacoes.append({
+                "DATA_HORA": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "CLIENTE": cliente,
+                "CPF": cpf,
+                "TIPO": "MUDANÇA DE SITUAÇÃO",
+                "SITUACAO": situacao
             })
 
-        # -------------------------
-        # Atualiza snapshot
-        # -------------------------
-        novo_snapshot[chave] = {
-            "status": status_atual,
-            "corretor": corretor
-        }
+    if novas_notificacoes:
+        notificacoes = pd.concat(
+            [pd.DataFrame(novas_notificacoes), notificacoes],
+            ignore_index=True
+        )
 
-    # -------------------------
-    # Persistência
-    # -------------------------
-    _salvar_json(ARQ_NOTIFICACOES, notificacoes)
-    _salvar_json(ARQ_SNAPSHOT, novo_snapshot)
+        notificacoes.to_csv(ARQ_NOTIF, index=False)
+
+    # Atualiza estado anterior
+    df_atual[["CHAVE", "CLIENTE", "CPF", "SITUACAO"]].drop_duplicates() \
+        .to_csv(ARQ_ESTADO, index=False)
+
+
+# =========================================================
+# LER NOTIFICAÇÕES
+# =========================================================
+def obter_notificacoes(qtd=20):
+    if not ARQ_NOTIF.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(ARQ_NOTIF)
+
+    if df.empty:
+        return df
+
+    return df.head(qtd)

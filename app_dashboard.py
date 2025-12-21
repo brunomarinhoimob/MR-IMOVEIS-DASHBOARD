@@ -5,7 +5,8 @@ from datetime import timedelta, datetime
 from login import tela_login
 from utils.supremo_config import TOKEN_SUPREMO
 
-from utils.notificacoes import verificar_notificacoes  # 👈 ESSA LINHA
+
+
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA (LOGIN vs DASHBOARD)
@@ -368,12 +369,13 @@ def carregar_dados_planilha() -> pd.DataFrame:
     return df
 
 
+# carrega a base (você vai usar no painel)
 df = carregar_dados_planilha()
 
-# ---------------------------------------------------------
-# NOTIFICAÇÕES GLOBAIS (APÓS CARGA DA PLANILHA)
-# ---------------------------------------------------------
-verificar_notificacoes(df)
+# chama o bootstrap (ele cuida das notificações)
+from utils.bootstrap import iniciar_app
+iniciar_app()
+
 
 # ---------------------------------------------------------
 # CONTEXTO DO USUÁRIO LOGADO

@@ -1,11 +1,19 @@
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import altair as alt
 from datetime import date, timedelta
+from utils.data_loader import carregar_dados_planilha
 
 from utils.bootstrap import iniciar_app
-from app_dashboard import carregar_dados_planilha
+from streamlit_autorefresh import st_autorefresh
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA (PRIMEIRA COISA DO ARQUIVO)
@@ -15,13 +23,11 @@ st.set_page_config(
     page_icon="🧩",
     layout="wide",
 )
-from streamlit_autorefresh import st_autorefresh
 
+# ---------------------------------------------------------
+# AUTO REFRESH DA PÁGINA
+# ---------------------------------------------------------
 st_autorefresh(interval=30 * 1000, key="auto_refresh_funil")
-
-from streamlit_autorefresh import st_autorefresh
-
-st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
 
 # ---------------------------------------------------------
 # BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES)

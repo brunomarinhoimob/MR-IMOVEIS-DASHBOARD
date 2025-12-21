@@ -1,23 +1,35 @@
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 import streamlit as st
 import pandas as pd
+
+from utils.data_loader import carregar_dados_planilha
 from utils.bootstrap import iniciar_app
-from app_dashboard import carregar_dados_planilha
+from streamlit_autorefresh import st_autorefresh
 
-iniciar_app()
-
-
+# ---------------------------------------------------------
+# CONFIGURAÇÃO DA PÁGINA
+# ---------------------------------------------------------
 st.set_page_config(
     page_title="Clientes MR",
     page_icon="👥",
     layout="wide"
 )
-from streamlit_autorefresh import st_autorefresh
 
+# ---------------------------------------------------------
+# AUTO REFRESH
+# ---------------------------------------------------------
 st_autorefresh(interval=30 * 1000, key="auto_refresh_clientes")
 
-from streamlit_autorefresh import st_autorefresh
-
-st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
+# ---------------------------------------------------------
+# BOOTSTRAP (LOGIN + NOTIFICAÇÕES)
+# ---------------------------------------------------------
+iniciar_app()
 
 # =========================================================
 # CONTEXTO DO USUÁRIO
@@ -30,7 +42,7 @@ nome_corretor_logado = (
 )
 
 # =========================================================
-# FUNÇÕES
+# FUNÇÕES AUXILIARES
 # =========================================================
 def badge_status(texto):
     texto = (texto or "").upper()
@@ -73,7 +85,6 @@ def formatar_observacao(linha):
         return None
 
     texto = str(texto).strip()
-
     if texto == "" or texto.lower() == "nan":
         return None
 
@@ -87,6 +98,7 @@ def carregar_base():
     df = carregar_dados_planilha()
     df.columns = df.columns.str.upper().str.strip()
 
+    # Data
     if "DIA" in df:
         df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
     elif "DATA" in df:
@@ -94,19 +106,65 @@ def carregar_base():
     else:
         df["DIA"] = pd.NaT
 
-    df["NOME_CLIENTE_BASE"] = df.get("NOME_CLIENTE_BASE", df.get("NOME", "")).fillna("").str.upper()
-    df["CPF_CLIENTE_BASE"] = df.get("CPF_CLIENTE_BASE", df.get("CPF", "")).fillna("").astype(str).str.replace(r"\D", "", regex=True)
+    # -----------------------------------------------------
+    # NOME DO CLIENTE (PRIORIDADE = CLIENTE)
+    # -----------------------------------------------------
+    if "CLIENTE" in df.columns:
+        df["NOME_CLIENTE_BASE"] = (
+            df["CLIENTE"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    elif "NOME_CLIENTE_BASE" in df.columns:
+        df["NOME_CLIENTE_BASE"] = (
+            df["NOME_CLIENTE_BASE"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    elif "NOME" in df.columns:
+        df["NOME_CLIENTE_BASE"] = (
+            df["NOME"]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
+    else:
+        df["NOME_CLIENTE_BASE"] = ""
 
-    df["CORRETOR"] = df.get("CORRETOR", "").fillna("").str.upper().str.strip()
-    df["EQUIPE"] = df.get("EQUIPE", "").fillna("").str.upper()
-    df["CONSTRUTORA"] = df.get("CONSTRUTORA", "").fillna("").str.upper()
-    df["EMPREENDIMENTO"] = df.get("EMPREENDIMENTO", "").fillna("").str.upper()
+    # CPF
+    if "CPF_CLIENTE_BASE" in df.columns:
+        df["CPF_CLIENTE_BASE"] = (
+            df["CPF_CLIENTE_BASE"]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+    elif "CPF" in df.columns:
+        df["CPF_CLIENTE_BASE"] = (
+            df["CPF"]
+            .fillna("")
+            .astype(str)
+            .str.replace(r"\D", "", regex=True)
+        )
+    else:
+        df["CPF_CLIENTE_BASE"] = ""
+
+    df["CORRETOR"] = df.get("CORRETOR", "").fillna("").astype(str).str.upper().str.strip()
+    df["EQUIPE"] = df.get("EQUIPE", "").fillna("").astype(str).str.upper()
+    df["CONSTRUTORA"] = df.get("CONSTRUTORA", "").fillna("").astype(str).str.upper()
+    df["EMPREENDIMENTO"] = df.get("EMPREENDIMENTO", "").fillna("").astype(str).str.upper()
 
     col_sit = next((c for c in ["SITUACAO", "SITUAÇÃO", "STATUS"] if c in df), None)
     df["SITUACAO_ORIGINAL"] = df[col_sit].fillna("").astype(str) if col_sit else ""
     df["STATUS_BASE"] = df["SITUACAO_ORIGINAL"].str.upper()
 
     df["CHAVE"] = df["NOME_CLIENTE_BASE"] + "|" + df["CPF_CLIENTE_BASE"]
+
     return df
 
 df = carregar_base()
@@ -139,19 +197,23 @@ if nome_busca:
 
 resultado = df[mask].copy()
 
-# =========================================================
-# TRAVA DE POSSE (PONTO-CHAVE)
-# =========================================================
+# ---------------------------------------------------------
+# TRAVA DE POSSE
+# ---------------------------------------------------------
 if perfil == "corretor":
-    resultado = resultado[resultado["CORRETOR"] == nome_corretor_logado]
-
-if resultado.empty:
-    st.warning("⚠️ Cliente não encontrado ou não pertence à sua carteira.")
-    st.stop()
+    resultado = resultado[
+        (resultado["CORRETOR"] == nome_corretor_logado)
+        | (resultado["CORRETOR"] == "")
+        | (resultado["CORRETOR"].isna())
+    ]
 
 # =========================================================
 # EXIBIÇÃO
 # =========================================================
+if resultado.empty:
+    st.warning("Cliente não encontrado ou não pertence à sua carteira.")
+    st.stop()
+
 for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
     grupo = grupo.sort_values("DIA").copy()
     ultima = obter_status_atual(grupo)
@@ -168,34 +230,17 @@ for (chave, corretor), grupo in resultado.groupby(["CHAVE", "CORRETOR"]):
         unsafe_allow_html=True
     )
 
-    st.write(f"**Corretor:** `{ultima['CORRETOR']}`")
+    st.write(f"**Corretor:** `{ultima['CORRETOR'] or 'NÃO DEFINIDO'}`")
     st.write(f"**Construtora:** `{ultima['CONSTRUTORA'] or 'NÃO INFORMADO'}`")
     st.write(f"**Empreendimento:** `{ultima['EMPREENDIMENTO'] or 'NÃO INFORMADO'}`")
 
     obs_final = formatar_observacao(ultima)
-
-if obs_final is not None:
-    st.markdown("### 📝 Observação do cliente")
-    st.info(obs_final)
-
-    # -------------------------
-    # LINHA DO TEMPO
-    # -------------------------
-    cols_hist = ["DIA", "SITUACAO_ORIGINAL"]
-    if "OBS" in grupo.columns:
-        cols_hist.append("OBS")
-    if "OBS2" in grupo.columns:
-        cols_hist.append("OBS2")
-
-    hist = grupo[cols_hist].copy()
-    hist["DIA"] = hist["DIA"].dt.strftime("%d/%m/%Y")
-
-    hist = hist.rename(columns={
-        "DIA": "Data",
-        "SITUACAO_ORIGINAL": "Situação",
-        "OBS": "Obs",
-        "OBS2": "Obs 2",
-    })
+    if obs_final:
+        st.markdown("### 📝 Observação do cliente")
+        st.info(obs_final)
 
     st.markdown("#### 📜 Linha do tempo do cliente")
+    hist = grupo[["DIA", "SITUACAO_ORIGINAL"]].copy()
+    hist["DIA"] = hist["DIA"].dt.strftime("%d/%m/%Y")
+    hist = hist.rename(columns={"DIA": "Data", "SITUACAO_ORIGINAL": "Situação"})
     st.dataframe(hist, use_container_width=True, hide_index=True)

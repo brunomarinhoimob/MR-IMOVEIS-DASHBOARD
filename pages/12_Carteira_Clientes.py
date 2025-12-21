@@ -1,259 +1,271 @@
+import sys
+from pathlib import Path
+from datetime import timedelta
+
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
 
-# ---------------------------------------------------------
-# CONFIGURAÇÃO DA PÁGINA (PRIMEIRA COISA DO ARQUIVO)
-# ---------------------------------------------------------
+# =========================================================
+# PATH
+# =========================================================
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
+from utils.bootstrap import iniciar_app
+from utils.data_loader import carregar_dados_planilha
+
+# =========================================================
+# CONFIG
+# =========================================================
 st.set_page_config(
     page_title="Carteira de Clientes",
     page_icon="📂",
     layout="wide"
 )
 
-from streamlit_autorefresh import st_autorefresh
-st_autorefresh(interval=30 * 1000, key="auto_refresh_global")
-
-# ---------------------------------------------------------
-# IMPORTS DE NEGÓCIO
-# ---------------------------------------------------------
-from utils.bootstrap import iniciar_app
-from app_dashboard import carregar_dados_planilha
-
-# ---------------------------------------------------------
-# BOOTSTRAP GLOBAL (LOGIN + NOTIFICAÇÕES) — UMA ÚNICA VEZ
-# ---------------------------------------------------------
 iniciar_app()
 
-# ---------------------------------------------------------
-# CONTEXTO DO USUÁRIO LOGADO
-# ---------------------------------------------------------
-
+# =========================================================
+# CONTEXTO DO USUÁRIO
+# =========================================================
 perfil = st.session_state.get("perfil")
-nome_corretor_logado = (
-    st.session_state.get("nome_usuario", "")
-    .upper()
-    .strip()
-)
+nome_corretor = st.session_state.get("nome_usuario", "").upper().strip()
 
-# ---------------------------------------------------------
-# CABEÇALHO
-# ---------------------------------------------------------
-col_logo, col_titulo = st.columns([1, 4])
+# =========================================================
+# HEADER
+# =========================================================
+col_logo, col_title = st.columns([1, 6])
+
 with col_logo:
     try:
-        st.image("logo_mr.png", use_column_width=True)
+        st.image("logo_mr.png", use_container_width=True)
     except:
         st.write("MR IMÓVEIS")
 
-with col_titulo:
+with col_title:
     st.markdown("## 📂 Carteira de Clientes")
     st.caption(
-        "Carteira filtrada por período e perfil de acesso. "
+        "Carteira filtrada por período e situação. "
         "Corretores visualizam apenas seus próprios clientes."
     )
 
-# ---------------------------------------------------------
-# CARREGAR DADOS
-# ---------------------------------------------------------
+# =========================================================
+# LOAD DATA (BLINDADO PARA DATA)
+# =========================================================
 @st.cache_data(ttl=60)
 def carregar():
     df = carregar_dados_planilha()
     df.columns = df.columns.str.upper().str.strip()
 
-    # DATA
-    if "DIA" in df:
-        df["DIA"] = pd.to_datetime(df["DIA"], errors="coerce")
-    elif "DATA" in df:
-        df["DIA"] = pd.to_datetime(df["DATA"], errors="coerce")
-    else:
-        df["DIA"] = pd.NaT
+    # -------------------------
+    # DATA — LIMPEZA TOTAL
+    # -------------------------
+    df["DATA_RAW"] = df["DATA"].astype(str)
 
+    df["DATA_RAW"] = (
+        df["DATA_RAW"]
+        .str.replace(r"\s+", "", regex=True)
+        .replace({"": pd.NA, "nan": pd.NA, "None": pd.NA})
+    )
+
+    df["DATA"] = pd.to_datetime(
+        df["DATA_RAW"],
+        dayfirst=True,
+        errors="coerce"
+    )
+
+    df = df[df["DATA"].notna()]
+
+    # -------------------------
     # CLIENTE
-    col_nome = next(
-        (c for c in ["NOME_CLIENTE_BASE", "NOME", "CLIENTE"] if c in df),
-        None
-    )
+    # -------------------------
     df["CLIENTE"] = (
-        df[col_nome].fillna("NÃO INFORMADO").str.upper()
-        if col_nome else "NÃO INFORMADO"
+        df["CLIENTE"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
     )
 
-    col_cpf = next(
-        (c for c in ["CPF_CLIENTE_BASE", "CPF"] if c in df),
-        None
-    )
+    # -------------------------
+    # CPF
+    # -------------------------
     df["CPF"] = (
-        df[col_cpf].fillna("").str.replace(r"\D", "", regex=True)
-        if col_cpf else ""
+        df["CPF"]
+        .fillna("")
+        .astype(str)
+        .str.replace(r"\D", "", regex=True)
     )
 
-    # PADRÕES
-    df["EQUIPE"] = df.get("EQUIPE", "NÃO INFORMADO").fillna("NÃO INFORMADO").str.upper()
-    df["CORRETOR"] = df.get("CORRETOR", "NÃO INFORMADO").fillna("NÃO INFORMADO").str.upper()
-    df["CONSTRUTORA"] = df.get("CONSTRUTORA", "").fillna("").str.upper()
-    df["EMPREENDIMENTO"] = df.get("EMPREENDIMENTO", "").fillna("").str.upper()
+    # -------------------------
+    # CORRETOR / EQUIPE
+    # -------------------------
+    df["CORRETOR"] = (
+        df["CORRETOR"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
+    df["EQUIPE"] = (
+        df["EQUIPE"]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+    )
+
+    # -------------------------
+    # CONSTRUTORA / EMPREENDIMENTO
+    # -------------------------
+    df["CONSTRUTORA"] = df.get("CONSTRUTORA", "").fillna("").astype(str).str.upper()
+    df["EMPREENDIMENTO"] = df.get("EMPREENDIMENTO", "").fillna("").astype(str).str.upper()
+
+    # -------------------------
     # SITUAÇÃO
-    col_sit = next(
-        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS"] if c in df),
+    # -------------------------
+    col_status = next(
+        (c for c in ["SITUAÇÃO", "SITUACAO", "STATUS"] if c in df.columns),
         None
     )
-    df["SITUACAO_ORIGINAL"] = df[col_sit].fillna("").astype(str) if col_sit else ""
-    df["STATUS_BASE"] = df["SITUACAO_ORIGINAL"].str.upper()
 
+    df["SITUACAO"] = (
+        df[col_status].fillna("").astype(str).str.upper()
+        if col_status else ""
+    )
+
+    # -------------------------
     # VGV
-    df["VGV"] = pd.to_numeric(df.get("VGV", 0), errors="coerce").fillna(0)
-
-    # CHAVE CLIENTE
-    df["CHAVE"] = df["CLIENTE"] + "|" + df["CPF"]
+    # -------------------------
+    if "VGV" in df.columns:
+        df["VGV"] = pd.to_numeric(df["VGV"], errors="coerce").fillna(0)
+    else:
+        df["VGV"] = 0
 
     return df
 
 
 df = carregar()
 
-# ---------------------------------------------------------
-# FILTRO DE PERÍODO
-# ---------------------------------------------------------
-dt_min = df["DIA"].min()
-dt_max = df["DIA"].max()
+# =========================================================
+# PERÍODO — SEMPRE BASEADO NA PLANILHA INTEIRA
+# =========================================================
+df_datas = df[df["DATA"].notna()]
 
-if pd.isna(dt_min) or pd.isna(dt_max):
-    dt_min = date.today()
-    dt_max = date.today()
-else:
-    dt_min = dt_min.date()
-    dt_max = dt_max.date()
+dt_min = df_datas["DATA"].min().date()
+dt_max = df_datas["DATA"].max().date()
 
 inicio_default = max(dt_min, dt_max - timedelta(days=30))
-fim_default = dt_max
-
-st.sidebar.subheader("Filtros – Carteira")
 
 periodo = st.sidebar.date_input(
     "Período:",
-    value=(inicio_default, fim_default),
+    value=(inicio_default, dt_max),
     min_value=dt_min,
     max_value=dt_max
 )
 
-if isinstance(periodo, tuple):
-    dt_ini, dt_fim = periodo
-else:
-    dt_ini = periodo
-    dt_fim = periodo
+dt_ini, dt_fim = periodo
 
 df = df[
-    (df["DIA"] >= pd.to_datetime(dt_ini)) &
-    (df["DIA"] <= pd.to_datetime(dt_fim))
+    (df["DATA"] >= pd.to_datetime(dt_ini)) &
+    (df["DATA"] <= pd.to_datetime(dt_fim))
 ]
 
-# ---------------------------------------------------------
-# BLOQUEIO REAL DE DADOS PARA PERFIL CORRETOR
-# ---------------------------------------------------------
+# =========================================================
+# BLOQUEIO POR PERFIL
+# =========================================================
 if perfil == "corretor":
-    df = df[df["CORRETOR"] == nome_corretor_logado]
+    df = df[df["CORRETOR"] == nome_corretor]
+    st.sidebar.info(f"👤 Corretor: {nome_corretor}")
 
-# ---------------------------------------------------------
-# FILTROS SIDEBAR (APENAS ADMIN / GESTOR)
-# ---------------------------------------------------------
-if perfil == "corretor":
-    equipe = "Todas"
-    corretor = nome_corretor_logado
-    st.sidebar.info(f"👤 Corretor logado: {nome_corretor_logado}")
-else:
-    equipe = st.sidebar.selectbox(
-        "Equipe:",
-        ["Todas"] + sorted(df["EQUIPE"].unique())
-    )
-    corretor = st.sidebar.selectbox(
-        "Corretor:",
-        ["Todos"] + sorted(df["CORRETOR"].unique())
-    )
+# =========================================================
+# ÚLTIMA SITUAÇÃO POR CLIENTE
+# =========================================================
+def ultima_linha(grupo: pd.DataFrame) -> pd.Series:
+    return grupo.sort_values("DATA").iloc[-1]
 
-    if corretor != "Todos":
-        df = df[df["CORRETOR"] == corretor]
 
-    if equipe != "Todas":
-        df = df[df["EQUIPE"] == equipe]
+df_resumo = (
+    df.groupby(["CLIENTE", "CPF"], as_index=False)
+    .apply(ultima_linha)
+    .reset_index(drop=True)
+)
 
-if df.empty:
+# =========================================================
+# FILTRO POR SITUAÇÃO (LAYOUT ANTIGO)
+# =========================================================
+st.markdown("### 🎛️ Filtro por Situação")
+
+situacoes_base = [
+    "EM ANÁLISE",
+    "APROVAÇÃO",
+    "APROVADO BACEN",
+    "PENDÊNCIA",
+    "REPROVAÇÃO",
+    "REANÁLISE",
+    "VENDA GERADA",
+    "VENDA INFORMADA",
+    "DESISTIU",
+]
+
+situacoes_sel = st.multiselect(
+    "Situações:",
+    options=situacoes_base,
+    default=situacoes_base
+)
+
+df_view = df_resumo.copy()
+
+if situacoes_sel:
+    df_view = df_view[df_view["SITUACAO"].isin(situacoes_sel)]
+
+if df_view.empty:
     st.info("Nenhum cliente encontrado com os filtros selecionados.")
     st.stop()
 
-# ---------------------------------------------------------
-# REGRA DE SITUAÇÃO ATUAL
-# ---------------------------------------------------------
-def obter_ultima_linha(grupo: pd.DataFrame) -> pd.Series:
-    grupo = grupo.sort_values("DIA").copy()
+# =========================================================
+# DATA FORMATADA (EXCLUSIVAMENTE DA PLANILHA)
+# =========================================================
+df_view["DATA_EXIBICAO"] = df_view["DATA"].dt.strftime("%d/%m/%Y")
 
-    mask_reset = grupo["SITUACAO_ORIGINAL"].str.contains("DESIST", na=False)
-    if mask_reset.any():
-        idx_last = grupo[mask_reset].index[-1]
-        grupo = grupo.loc[idx_last:]
+# =========================================================
+# EXIBIÇÃO FINAL — TABELA DE GESTÃO
+# =========================================================
+st.markdown("---")
+st.markdown("## 📋 Carteira de Clientes")
+st.caption(f"Total de clientes exibidos: {len(df_view)}")
 
-    vendas = grupo[grupo["STATUS_BASE"].isin(["VENDA GERADA", "VENDA INFORMADA"])]
-    if not vendas.empty:
-        return vendas.iloc[-1]
-
-    return grupo.iloc[-1]
-
-# ---------------------------------------------------------
-# MONTAR CARTEIRA
-# ---------------------------------------------------------
-resumo = []
-
-for (ch, corr), grupo in df.groupby(["CHAVE", "CORRETOR"]):
-    linha = obter_ultima_linha(grupo)
-    historico = grupo["STATUS_BASE"]
-
-    resumo.append({
-        "Cliente": linha["CLIENTE"],
-        "CPF": linha["CPF"],
-        "Equipe": linha["EQUIPE"],
-        "Corretor": linha["CORRETOR"],
-        "Situação atual": linha["SITUACAO_ORIGINAL"],
-        "Última movimentação": linha["DIA"].strftime("%d/%m/%Y") if pd.notna(linha["DIA"]) else "",
-        "Construtora": linha["CONSTRUTORA"],
-        "Empreendimento": linha["EMPREENDIMENTO"],
-        "Análises": historico.isin(["EM ANÁLISE", "REANÁLISE"]).sum(),
-        "Aprovações": (historico == "APROVADO").sum(),
-        "Vendas": historico.isin(["VENDA GERADA", "VENDA INFORMADA"]).sum(),
-        "VGV": grupo["VGV"].sum()
-    })
-
-df_resumo = pd.DataFrame(resumo)
-
-# ---------------------------------------------------------
-# FILTRO POR SITUAÇÃO
-# ---------------------------------------------------------
-st.markdown("### 🎛️ Filtro por Situação")
-
-situacoes = sorted(df_resumo["Situação atual"].dropna().unique().tolist())
-
-selecionadas = st.multiselect(
-    "Situações:",
-    options=situacoes,
-    default=situacoes
-)
-
-if selecionadas:
-    df_resumo = df_resumo[df_resumo["Situação atual"].isin(selecionadas)]
-
-# ---------------------------------------------------------
-# FORMATAÇÃO FINAL
-# ---------------------------------------------------------
-df_resumo["VGV"] = df_resumo["VGV"].apply(
+df_view["VGV"] = df_view["VGV"].apply(
     lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 )
 
-st.markdown("---")
-st.markdown("### 🧾 Carteira de Clientes")
-st.caption(f"Total de clientes exibidos: {len(df_resumo)}")
-
 st.dataframe(
-    df_resumo.sort_values(["Corretor", "Situação atual", "Cliente"]),
+    df_view[
+        [
+            "CLIENTE",
+            "CPF",
+            "EQUIPE",
+            "CORRETOR",
+            "SITUACAO",
+            "DATA_EXIBICAO",
+            "CONSTRUTORA",
+            "EMPREENDIMENTO",
+            "VGV",
+        ]
+    ].rename(columns={
+        "CLIENTE": "Cliente",
+        "CPF": "CPF",
+        "EQUIPE": "Equipe",
+        "CORRETOR": "Corretor",
+        "SITUACAO": "Situação atual",
+        "DATA_EXIBICAO": "Última movimentação",
+        "CONSTRUTORA": "Construtora",
+        "EMPREENDIMENTO": "Empreendimento",
+    }).sort_values(
+        ["Situação atual", "Última movimentação"],
+        ascending=[True, False]
+    ),
     use_container_width=True,
     hide_index=True
 )

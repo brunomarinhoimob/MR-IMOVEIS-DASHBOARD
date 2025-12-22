@@ -187,62 +187,62 @@ for i, row in df.iterrows():
             data_cap = row["DATA_CAPTURA"].strftime("%d/%m/%Y")
 
         st.markdown(
-            f"""
-            <div style="
-                border: 2px solid {border};
-                border-radius: 18px;
-                padding: 18px;
-                margin-bottom: 24px;
-                background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
-                box-shadow: {glow};
+    f"""
+    <div style="
+        border: 2px solid {border};
+        border-radius: 18px;
+        padding: 18px;
+        margin-bottom: 24px;
+        background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+        box-shadow: {glow};
+    ">
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0; font-size:18px; font-weight:600; color:#ffffff;">
+                {row['nome_pessoa']}
+            </h4>
+            <span style="
+                font-size:12px;
+                padding:5px 12px;
+                border-radius:999px;
+                background:{border};
+                color:#020617;
+                font-weight:700;
             ">
+                {badge}
+            </span>
+        </div>
 
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <h4 style="margin:0; font-size:18px; font-weight:600;">
-                        {row['nome_pessoa']}
-                    </h4>
-                    <span style="
-                        font-size:12px;
-                        padding:5px 12px;
-                        border-radius:999px;
-                        background:{border};
-                        color:#020617;
-                        font-weight:700;
-                    ">
-                        {badge}
-                    </span>
-                </div>
+        <div style="margin-top:14px; font-size:14px; line-height:1.7; color:#e5e7eb;">
+            <div>📧 <strong>Email:</strong> {row.get('email_pessoa','-')}</div>
+            <div>📞 <strong>Telefone:</strong> {row.get('telefone_pessoa','-')}</div>
+            <div>👤 <strong>Corretor:</strong> {row.get('nome_corretor','-')}</div>
+            <div>🗓️ <strong>Captura:</strong> {data_cap}</div>
+        </div>
 
-                <div style="margin-top:14px; font-size:14px; line-height:1.7; color:#e5e7eb;">
-                    <div>📧 <strong>Email:</strong> {row.get('email_pessoa','-')}</div>
-                    <div>📞 <strong>Telefone:</strong> {row.get('telefone_pessoa','-')}</div>
-                    <div>👤 <strong>Corretor:</strong> {row.get('nome_corretor','-')}</div>
-                    <div>🗓️ <strong>Captura:</strong> {data_cap}</div>
-                </div>
+        <div style="
+            margin-top:14px;
+            padding:10px 12px;
+            background:#020617;
+            border-radius:12px;
+            font-size:13px;
+            color:#cbd5f5;
+        ">
+            📝 {obs}
+        </div>
 
-                <div style="
-                    margin-top:14px;
-                    padding:10px 12px;
-                    background:#020617;
-                    border-radius:12px;
-                    font-size:13px;
-                    color:#cbd5f5;
-                ">
-                    📝 {obs}
-                </div>
+        <div style="
+            margin-top:14px;
+            padding-top:10px;
+            border-top:1px solid #1e293b;
+            font-size:13px;
+            color:#93c5fd;
+            font-weight:600;
+        ">
+            📌 Situação: {row.get('nome_situacao','-')}
+        </div>
 
-                <div style="
-                    margin-top:14px;
-                    padding-top:10px;
-                    border-top:1px solid #1e293b;
-                    font-size:13px;
-                    color:#93c5fd;
-                    font-weight:600;
-                ">
-                    📌 Situação: {row.get('nome_situacao','-')}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    </div>
+    """,
+    unsafe_allow_html=True
+)

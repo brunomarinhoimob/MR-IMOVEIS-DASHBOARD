@@ -3,6 +3,7 @@
 # REGRA: CLIENTE + CORRETOR
 # <= 60 DIAS  -> REANÁLISE
 # >  60 DIAS  -> NOVA ANÁLISE
+# VISUAL: GLOW VERDE (NOVA) | GLOW ÂMBAR (REANÁLISE)
 # PÁGINA OFICIAL 18
 # =========================================================
 
@@ -38,7 +39,7 @@ st.set_page_config(
 st.title("📂 Pré-Cadastro – Análises Pendentes")
 
 # =========================================================
-# AUTO REFRESH (30s – SEM F5)
+# AUTO REFRESH (30s)
 # =========================================================
 st_autorefresh(interval=30 * 1000, key="auto_refresh_pre_cadastro_18")
 
@@ -49,8 +50,8 @@ API_URL = "https://api.supremocrm.com.br/v1/leads"
 HEADERS = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
 SITUACAO_ALVO = "ANALISE PENDENTE"
-DIAS_JANELA_CRM = 7        # limite técnico
-LIMITE_REANALISE = 60      # REGRA OFICIAL
+DIAS_JANELA_CRM = 7
+LIMITE_REANALISE = 60
 
 # =========================================================
 # FUNÇÕES AUXILIARES
@@ -63,7 +64,7 @@ def normalizar(txt):
     return txt
 
 # =========================================================
-# CARGA DOS LEADS DO CRM (ÚLTIMOS 7 DIAS)
+# CARGA CRM (ÚLTIMOS 7 DIAS)
 # =========================================================
 @st.cache_data(ttl=30)
 def carregar_leads_crm():
@@ -88,7 +89,6 @@ def carregar_leads_crm():
 
         for lead in js["data"]:
             data_captura = pd.to_datetime(lead.get("data_captura"), errors="coerce")
-
             if pd.isna(data_captura):
                 continue
 
@@ -102,7 +102,7 @@ def carregar_leads_crm():
     return pd.DataFrame(dados)
 
 # =========================================================
-# LOAD DOS DADOS
+# LOAD DADOS
 # =========================================================
 df_leads = carregar_leads_crm()
 df_plan = carregar_dados_planilha()
@@ -112,7 +112,7 @@ if df_leads.empty:
     st.stop()
 
 # =========================================================
-# NORMALIZAÇÃO DAS CHAVES
+# NORMALIZA CHAVES
 # =========================================================
 df_leads["CLIENTE_KEY"] = df_leads["nome_pessoa"].apply(normalizar)
 df_leads["CORRETOR_KEY"] = df_leads["nome_corretor"].apply(normalizar)
@@ -120,24 +120,21 @@ df_leads["CORRETOR_KEY"] = df_leads["nome_corretor"].apply(normalizar)
 df_plan["CLIENTE_KEY"] = df_plan["CLIENTE"].apply(normalizar)
 df_plan["CORRETOR_KEY"] = df_plan["CORRETOR"].apply(normalizar)
 
-# =========================================================
-# DATA REAL DA ANÁLISE (COLUNA A DA PLANILHA) — parse BR robusto
-# =========================================================
+# DATA DA ANÁLISE (COLUNA A – BR)
 df_plan["DATA"] = df_plan["DATA"].astype(str).str.strip()
-
-dt1 = pd.to_datetime(df_plan["DATA"], errors="coerce", dayfirst=True)  # dd/mm/yyyy
-dt2 = pd.to_datetime(df_plan["DATA"], errors="coerce")                # fallback
+dt1 = pd.to_datetime(df_plan["DATA"], errors="coerce", dayfirst=True)
+dt2 = pd.to_datetime(df_plan["DATA"], errors="coerce")
 df_plan["DATA"] = dt1.fillna(dt2)
 
 # =========================================================
-# FILTRO – SOMENTE ANÁLISE PENDENTE
+# FILTRO – ANÁLISE PENDENTE
 # =========================================================
 df = df_leads[
     df_leads["nome_situacao"].astype(str).str.upper() == SITUACAO_ALVO
 ].copy()
 
 # =========================================================
-# CLASSIFICAÇÃO: NOVA x REANÁLISE (REGRA 60 DIAS)
+# CLASSIFICAÇÃO NOVA x REANÁLISE
 # =========================================================
 def classificar_analise(row):
     registros = df_plan[
@@ -149,41 +146,41 @@ def classificar_analise(row):
         return "NOVA"
 
     ultima_data = registros["DATA"].max()
-
     if pd.isna(ultima_data):
         return "NOVA"
 
     dias = (pd.Timestamp.now().normalize() - ultima_data.normalize()).days
-
     return "REANÁLISE" if dias <= LIMITE_REANALISE else "NOVA"
 
 df["TIPO_ANALISE"] = df.apply(classificar_analise, axis=1)
 
 # =========================================================
-# ORDENAÇÃO – FIFO REAL
+# ORDENAÇÃO FIFO
 # =========================================================
 df["DATA_CAPTURA"] = pd.to_datetime(df["data_captura"], errors="coerce")
 df = df.sort_values("DATA_CAPTURA")
 
 # =========================================================
-# TOPO – CONTADOR
+# TOPO
 # =========================================================
 st.markdown(f"## ⏳ Tem **{len(df)} análises** para subir")
 st.divider()
 
 # =========================================================
-# CARDS
+# CARDS COM GLOW
 # =========================================================
 cols = st.columns(3)
 
 for i, row in df.iterrows():
     with cols[i % 3]:
 
-        badge = "🆕 NOVA ANÁLISE" if row["TIPO_ANALISE"] == "NOVA" else "🔁 REANÁLISE"
-        border = "#22c55e" if row["TIPO_ANALISE"] == "NOVA" else "#f59e0b"
+        is_nova = row["TIPO_ANALISE"] == "NOVA"
+        glow = "0 0 22px rgba(34,197,94,0.45)" if is_nova else "0 0 22px rgba(245,158,11,0.45)"
+        border = "#22c55e" if is_nova else "#f59e0b"
+        badge = "🆕 NOVA ANÁLISE" if is_nova else "🔁 REANÁLISE"
 
-        obs = row.get("anotacoes", "")
-        obs = obs[:200] + "..." if len(str(obs)) > 200 else obs
+        obs = row.get("anotacoes") or "Sem observações"
+        obs = obs[:200] + "..." if len(obs) > 200 else obs
 
         data_cap = "-"
         if pd.notna(row.get("DATA_CAPTURA")):
@@ -193,21 +190,58 @@ for i, row in df.iterrows():
             f"""
             <div style="
                 border: 2px solid {border};
-                border-radius: 14px;
-                padding: 16px;
-                margin-bottom: 18px;
+                border-radius: 18px;
+                padding: 18px;
+                margin-bottom: 24px;
+                background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+                box-shadow: {glow};
             ">
-                <h4>{row['nome_pessoa']}</h4>
-                <strong>{badge}</strong><br><br>
 
-                📧 {row.get('email_pessoa','-')}<br>
-                📞 {row.get('telefone_pessoa','-')}<br>
-                👤 {row.get('nome_corretor','-')}<br>
-                🕒 {data_cap}<br><br>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0; font-size:18px; font-weight:600;">
+                        {row['nome_pessoa']}
+                    </h4>
+                    <span style="
+                        font-size:12px;
+                        padding:5px 12px;
+                        border-radius:999px;
+                        background:{border};
+                        color:#020617;
+                        font-weight:700;
+                    ">
+                        {badge}
+                    </span>
+                </div>
 
-                📝 {obs}<br><br>
+                <div style="margin-top:14px; font-size:14px; line-height:1.7; color:#e5e7eb;">
+                    <div>📧 <strong>Email:</strong> {row.get('email_pessoa','-')}</div>
+                    <div>📞 <strong>Telefone:</strong> {row.get('telefone_pessoa','-')}</div>
+                    <div>👤 <strong>Corretor:</strong> {row.get('nome_corretor','-')}</div>
+                    <div>🗓️ <strong>Captura:</strong> {data_cap}</div>
+                </div>
 
-                📌 Situação: {row.get('nome_situacao','-')}
+                <div style="
+                    margin-top:14px;
+                    padding:10px 12px;
+                    background:#020617;
+                    border-radius:12px;
+                    font-size:13px;
+                    color:#cbd5f5;
+                ">
+                    📝 {obs}
+                </div>
+
+                <div style="
+                    margin-top:14px;
+                    padding-top:10px;
+                    border-top:1px solid #1e293b;
+                    font-size:13px;
+                    color:#93c5fd;
+                    font-weight:600;
+                ">
+                    📌 Situação: {row.get('nome_situacao','-')}
+                </div>
+
             </div>
             """,
             unsafe_allow_html=True

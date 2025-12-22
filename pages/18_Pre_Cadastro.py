@@ -1,11 +1,15 @@
 # =========================================================
 # PRÉ-CADASTRO – ANÁLISES PENDENTES (ÚLTIMOS 7 DIAS)
+# REGRA: CLIENTE + CORRETOR
+# <= 60 DIAS  -> REANÁLISE
+# >  60 DIAS  -> NOVA ANÁLISE
 # PÁGINA OFICIAL 18
 # =========================================================
 
 import streamlit as st
 import pandas as pd
 import requests
+import unicodedata
 from datetime import datetime, timedelta
 
 from streamlit_autorefresh import st_autorefresh
@@ -18,13 +22,12 @@ from app_dashboard import carregar_dados_planilha
 if not st.session_state.get("logado"):
     st.stop()
 
-# Apenas gestor / ADM
 if st.session_state.get("perfil") == "corretor":
     st.error("⛔ Acesso restrito aos gestores.")
     st.stop()
 
 # =========================================================
-# CONFIGURAÇÃO DA PÁGINA
+# CONFIG DA PÁGINA
 # =========================================================
 st.set_page_config(
     page_title="Pré-Cadastro | Análises Pendentes",
@@ -35,18 +38,19 @@ st.set_page_config(
 st.title("📂 Pré-Cadastro – Análises Pendentes")
 
 # =========================================================
-# AUTO REFRESH (PADRÃO DO PROJETO – SEM F5)
+# AUTO REFRESH (30s – SEM F5)
 # =========================================================
-st_autorefresh(interval=30 * 1000, key="auto_refresh_pre_cadastro_oficial")
+st_autorefresh(interval=30 * 1000, key="auto_refresh_pre_cadastro_18")
 
 # =========================================================
-# CONFIG
+# CONFIGURAÇÕES
 # =========================================================
 API_URL = "https://api.supremocrm.com.br/v1/leads"
 HEADERS = {"Authorization": f"Bearer {TOKEN_SUPREMO}"}
 
 SITUACAO_ALVO = "ANALISE PENDENTE"
-DIAS_JANELA = 7
+DIAS_JANELA_CRM = 7        # limite técnico
+LIMITE_REANALISE = 60      # REGRA OFICIAL
 
 # =========================================================
 # FUNÇÕES AUXILIARES
@@ -54,18 +58,18 @@ DIAS_JANELA = 7
 def normalizar(txt):
     if pd.isna(txt):
         return ""
-    return str(txt).strip().upper()
+    txt = str(txt).strip().upper()
+    txt = unicodedata.normalize("NFKD", txt).encode("ASCII", "ignore").decode("ASCII")
+    return txt
 
 # =========================================================
-# CARGA CRM
-# - Limita por DATA DE CAPTURA (7 dias)
-# - Situação manda, data só limita volume
+# CARGA DOS LEADS DO CRM (ÚLTIMOS 7 DIAS)
 # =========================================================
 @st.cache_data(ttl=30)
 def carregar_leads_crm():
     dados = []
     pagina = 1
-    data_limite = datetime.now() - timedelta(days=DIAS_JANELA)
+    data_limite = datetime.now() - timedelta(days=DIAS_JANELA_CRM)
 
     while True:
         r = requests.get(
@@ -90,7 +94,6 @@ def carregar_leads_crm():
             if pd.isna(data_captura):
                 continue
 
-            # Lead fora da janela → pode parar
             if data_captura < data_limite:
                 return pd.DataFrame(dados)
 
@@ -101,7 +104,7 @@ def carregar_leads_crm():
     return pd.DataFrame(dados)
 
 # =========================================================
-# LOAD DADOS
+# LOAD DOS DADOS
 # =========================================================
 df_leads = carregar_leads_crm()
 df_plan = carregar_dados_planilha()
@@ -111,7 +114,7 @@ if df_leads.empty:
     st.stop()
 
 # =========================================================
-# NORMALIZA CHAVES (ANTI-REANÁLISE)
+# NORMALIZAÇÃO DAS CHAVES
 # =========================================================
 df_leads["CLIENTE_KEY"] = df_leads["nome_pessoa"].apply(normalizar)
 df_leads["CORRETOR_KEY"] = df_leads["nome_corretor"].apply(normalizar)
@@ -119,34 +122,50 @@ df_leads["CORRETOR_KEY"] = df_leads["nome_corretor"].apply(normalizar)
 df_plan["CLIENTE_KEY"] = df_plan["CLIENTE"].apply(normalizar)
 df_plan["CORRETOR_KEY"] = df_plan["CORRETOR"].apply(normalizar)
 
+# DATA REAL DA ANÁLISE (COLUNA A DA PLANILHA)
+df_plan["DATA"] = pd.to_datetime(df_plan["DATA"], errors="coerce")
+
 # =========================================================
-# FILTRO – REGRA DE NEGÓCIO
+# FILTRO – SOMENTE ANÁLISE PENDENTE
 # =========================================================
 df = df_leads[
     df_leads["nome_situacao"].astype(str).str.upper() == SITUACAO_ALVO
 ].copy()
 
 # =========================================================
-# MARCA REANÁLISE
+# CLASSIFICAÇÃO: NOVA x REANÁLISE (REGRA 60 DIAS)
 # =========================================================
-df["TIPO_ANALISE"] = df.apply(
-    lambda r: "REANÁLISE"
-    if (
-        (df_plan["CLIENTE_KEY"] == r["CLIENTE_KEY"]) &
-        (df_plan["CORRETOR_KEY"] == r["CORRETOR_KEY"])
-    ).any()
-    else "NOVA",
-    axis=1
-)
+def classificar_analise(row):
+    registros = df_plan[
+        (df_plan["CLIENTE_KEY"] == row["CLIENTE_KEY"]) &
+        (df_plan["CORRETOR_KEY"] == row["CORRETOR_KEY"])
+    ]
+
+    if registros.empty:
+        return "NOVA"
+
+    ultima_data = registros["DATA"].max()
+
+    if pd.isna(ultima_data):
+        return "NOVA"
+
+    dias = (pd.Timestamp.now() - ultima_data).days
+
+    if dias <= LIMITE_REANALISE:
+        return "REANÁLISE"
+    else:
+        return "NOVA"
+
+df["TIPO_ANALISE"] = df.apply(classificar_analise, axis=1)
 
 # =========================================================
-# ORDENAÇÃO – FIFO REAL (MAIS ANTIGO PRIMEIRO)
+# ORDENAÇÃO – FIFO REAL
 # =========================================================
 df["DATA_CAPTURA"] = pd.to_datetime(df["data_captura"], errors="coerce")
 df = df.sort_values("DATA_CAPTURA")
 
 # =========================================================
-# TOPO
+# TOPO – CONTADOR
 # =========================================================
 st.markdown(f"## ⏳ Tem **{len(df)} análises** para subir")
 st.divider()
@@ -159,7 +178,7 @@ cols = st.columns(3)
 for i, row in df.iterrows():
     with cols[i % 3]:
 
-        badge = "🆕 Análise nova" if row["TIPO_ANALISE"] == "NOVA" else "🔁 Reanálise"
+        badge = "🆕 NOVA ANÁLISE" if row["TIPO_ANALISE"] == "NOVA" else "🔁 REANÁLISE"
         border = "#22c55e" if row["TIPO_ANALISE"] == "NOVA" else "#f59e0b"
 
         obs = row.get("anotacoes", "")

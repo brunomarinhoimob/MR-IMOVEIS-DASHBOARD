@@ -1,4 +1,3 @@
-# versao funil por origem - evento real
 # =========================================================
 # FUNIL DE LEADS – CONVERSÃO POR ORIGEM (EVENTO REAL)
 # =========================================================
@@ -10,7 +9,18 @@ from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
 
 # =========================================================
-# CONFIG
+# BLOQUEIO DE LOGIN (IGUAL PÁGINA 03)
+# =========================================================
+if "logado" not in st.session_state or not st.session_state.logado:
+    st.warning("🔒 Acesso restrito. Faça login para continuar.")
+    st.stop()
+
+if st.session_state.get("perfil") == "corretor":
+    st.warning("🔒 Você não tem permissão para acessar esta página.")
+    st.stop()
+
+# =========================================================
+# CONFIG DA PÁGINA
 # =========================================================
 st.set_page_config(
     page_title="Funil de Leads | MR Imóveis",
@@ -19,10 +29,14 @@ st.set_page_config(
 )
 
 # =========================================================
-# TOPO – LOGO
+# TOPO – LOGO E TÍTULO
 # =========================================================
-st.image("logo_mr.png", width=180)
-st.title("📊 FUNIL DE LEADS")
+try:
+    st.image("logo_mr.png", width=180)
+except Exception:
+    pass
+
+st.title("📊 FUNIL DE LEADS – Conversão por Origem")
 
 # =========================================================
 # PLANILHA
@@ -101,7 +115,7 @@ def carregar_planilha():
     return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
-# CARGA CRM (ORIGEM DO LEAD)
+# CARGA CRM – ORIGEM DO LEAD
 # =========================================================
 @st.cache_data(ttl=1800)
 def carregar_crm():
@@ -124,9 +138,7 @@ def carregar_crm():
 
     df = pd.DataFrame(dados)
     df["CLIENTE"] = df["nome_pessoa"].astype(str).str.upper().str.strip()
-    df["ORIGEM_CRM"] = df.get("nome_origem", "") \
-                         .fillna("") \
-                         .astype(str).str.upper().str.strip()
+    df["ORIGEM_CRM"] = df.get("nome_origem", "").fillna("").astype(str).str.upper().str.strip()
 
     return df[["CLIENTE", "ORIGEM_CRM"]]
 
@@ -136,9 +148,6 @@ def carregar_crm():
 df_hist = carregar_planilha()
 df_crm = carregar_crm()
 
-# =========================================================
-# ORIGEM FINAL (PLANILHA > CRM > SEM CADASTRO)
-# =========================================================
 df_hist = df_hist.merge(df_crm, on="CLIENTE", how="left")
 
 df_hist["ORIGEM"] = df_hist["ORIGEM"].where(
@@ -152,7 +161,7 @@ df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 # =========================================================
 # FILTROS
 # =========================================================
-st.sidebar.header("Filtros")
+st.sidebar.title("Filtros 🔎")
 
 modo = st.sidebar.radio("Modo de período", ["DIA", "DATA BASE"])
 df_f = df_hist.copy()
@@ -172,16 +181,8 @@ else:
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
 
-equipe = st.sidebar.selectbox("Equipe", ["TODAS"] + sorted(df_f["EQUIPE"].unique()))
-if equipe != "TODAS":
-    df_f = df_f[df_f["EQUIPE"] == equipe]
-
-corretor = st.sidebar.selectbox("Corretor", ["TODOS"] + sorted(df_f["CORRETOR"].unique()))
-if corretor != "TODOS":
-    df_f = df_f[df_f["CORRETOR"] == corretor]
-
 # =========================================================
-# KPI – EVENTO REAL
+# KPI
 # =========================================================
 kpi = st.radio(
     "Selecione o KPI",
@@ -196,7 +197,7 @@ kpi = st.radio(
 )
 
 if kpi == "ANÁLISES":
-    status_kpi = ["ANALISE"]   # 🔥 SEM REANÁLISE
+    status_kpi = ["ANALISE"]   # 👈 sem reanálise
 elif kpi == "APROVADO":
     status_kpi = ["APROVADO"]
 elif kpi == "APROVADO BACEN":
@@ -216,7 +217,7 @@ if total_kpi == 0:
     st.stop()
 
 # =========================================================
-# CARDS POR ORIGEM
+# CARDS
 # =========================================================
 dist = (
     df_kpi
@@ -243,7 +244,7 @@ for _, row in dist.iterrows():
         i = 0
 
 # =========================================================
-# TABELA DETALHADA
+# TABELA
 # =========================================================
 st.divider()
 st.subheader("📋 Eventos do KPI Selecionado")

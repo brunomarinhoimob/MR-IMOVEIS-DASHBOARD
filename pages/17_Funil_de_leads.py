@@ -9,7 +9,7 @@ from datetime import date
 from utils.supremo_config import TOKEN_SUPREMO
 
 # =========================================================
-# CONTROLE DE ACESSO (IGUAL PÁGINA 03)
+# BLOQUEIO DE LOGIN (IGUAL PÁGINA 03)
 # =========================================================
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
@@ -20,7 +20,7 @@ if st.session_state.get("perfil") == "corretor":
     st.stop()
 
 # =========================================================
-# CONFIG
+# CONFIG DA PÁGINA
 # =========================================================
 st.set_page_config(
     page_title="Funil de Leads | MR Imóveis",
@@ -28,7 +28,14 @@ st.set_page_config(
     layout="wide"
 )
 
-st.image("logo_mr.png", width=180)
+# =========================================================
+# TOPO – LOGO E TÍTULO
+# =========================================================
+try:
+    st.image("logo_mr.png", width=180)
+except Exception:
+    pass
+
 st.title("📊 FUNIL DE LEADS – Conversão por Origem")
 
 # =========================================================
@@ -85,13 +92,13 @@ def carregar_planilha():
     df["DATA_BASE_DATE"] = df["DATA_BASE_LABEL"].apply(parse_data_base)
 
     for col in ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM"]:
-    df[col] = (
-        df[col]
-        .fillna("")
-        .astype(str)
-        .str.upper()
-        .str.strip()
-    )
+        df[col] = (
+            df[col]
+            .fillna("")
+            .astype(str)
+            .str.upper()
+            .str.strip()
+        )
 
     df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper().str.strip()
     df["STATUS_BASE"] = ""
@@ -114,7 +121,7 @@ def carregar_planilha():
     return df[df["STATUS_BASE"] != ""]
 
 # =========================================================
-# CARGA CRM – ORIGEM (LIMITADO)
+# CARGA CRM – ORIGEM (LIMITADO / SEGURO)
 # =========================================================
 @st.cache_data(ttl=1800)
 def carregar_crm():
@@ -143,7 +150,6 @@ def carregar_crm():
             pagina += 1
 
     except requests.exceptions.RequestException:
-        st.warning("⚠️ CRM indisponível no momento. Usando apenas dados da planilha.")
         return pd.DataFrame(columns=["CLIENTE", "ORIGEM_CRM"])
 
     dados = dados[:LIMITE]
@@ -175,7 +181,6 @@ df_hist["ORIGEM"] = df_hist["ORIGEM"].fillna("SEM CADASTRO NO CRM")
 # =========================================================
 st.sidebar.title("Filtros 🔎")
 
-# --- período
 modo = st.sidebar.radio("Modo de período", ["DIA", "DATA BASE"])
 df_f = df_hist.copy()
 
@@ -184,26 +189,25 @@ if modo == "DIA":
         "Período",
         value=(df_f["DATA"].min().date(), df_f["DATA"].max().date())
     )
-    df_f = df_f[(df_f["DATA"].dt.date >= ini) & (df_f["DATA"].dt.date <= fim)]
+    df_f = df_f[
+        (df_f["DATA"].dt.date >= ini) &
+        (df_f["DATA"].dt.date <= fim)
+    ]
 else:
     bases = sorted(df_f["DATA_BASE_LABEL"].dropna().unique(), key=parse_data_base)
     sel = st.sidebar.multiselect("Data Base", bases, default=bases)
     if sel:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
 
-# --- equipe
-equipes = sorted(
-    [e for e in df_f["EQUIPE"].unique() if e and e != "NAN"]
-)
+# ---------- FILTRO EQUIPE ----------
+equipes = sorted([e for e in df_f["EQUIPE"].unique() if e and e != "NAN"])
 equipe_sel = st.sidebar.selectbox("Equipe", ["TODAS"] + equipes)
 
 if equipe_sel != "TODAS":
     df_f = df_f[df_f["EQUIPE"] == equipe_sel]
 
-# --- corretor (dependente da equipe)
-corretores = sorted(
-    [c for c in df_f["CORRETOR"].unique() if c and c != "NAN"]
-)
+# ---------- FILTRO CORRETOR ----------
+corretores = sorted([c for c in df_f["CORRETOR"].unique() if c and c != "NAN"])
 corretor_sel = st.sidebar.selectbox("Corretor", ["TODOS"] + corretores)
 
 if corretor_sel != "TODOS":
@@ -273,7 +277,8 @@ st.divider()
 st.subheader("📋 Eventos do KPI Selecionado")
 
 st.dataframe(
-    df_kpi[["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "STATUS_BASE", "DATA"]]
-    .sort_values("DATA", ascending=False),
+    df_kpi[
+        ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM", "STATUS_BASE", "DATA"]
+    ].sort_values("DATA", ascending=False),
     use_container_width=True
 )

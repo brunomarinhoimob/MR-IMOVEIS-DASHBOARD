@@ -85,7 +85,13 @@ def carregar_planilha():
     df["DATA_BASE_DATE"] = df["DATA_BASE_LABEL"].apply(parse_data_base)
 
     for col in ["CLIENTE", "CORRETOR", "EQUIPE", "ORIGEM"]:
-        df[col] = df[col].astype(str).str.upper().str.strip()
+    df[col] = (
+        df[col]
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
 
     df["STATUS_RAW"] = df["SITUAÇÃO"].astype(str).str.upper().str.strip()
     df["STATUS_BASE"] = ""
@@ -186,14 +192,18 @@ else:
         df_f = df_f[df_f["DATA_BASE_LABEL"].isin(sel)]
 
 # --- equipe
-equipes = sorted(df_f["EQUIPE"].dropna().unique())
+equipes = sorted(
+    [e for e in df_f["EQUIPE"].unique() if e and e != "NAN"]
+)
 equipe_sel = st.sidebar.selectbox("Equipe", ["TODAS"] + equipes)
 
 if equipe_sel != "TODAS":
     df_f = df_f[df_f["EQUIPE"] == equipe_sel]
 
 # --- corretor (dependente da equipe)
-corretores = sorted(df_f["CORRETOR"].dropna().unique())
+corretores = sorted(
+    [c for c in df_f["CORRETOR"].unique() if c and c != "NAN"]
+)
 corretor_sel = st.sidebar.selectbox("Corretor", ["TODOS"] + corretores)
 
 if corretor_sel != "TODOS":

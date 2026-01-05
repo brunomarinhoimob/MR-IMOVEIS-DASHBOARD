@@ -4,6 +4,7 @@ import requests
 from datetime import timedelta, datetime
 from login import tela_login
 from utils.supremo_config import TOKEN_SUPREMO
+from utils.notificacoes_json import processar_eventos
 
 
 
@@ -37,6 +38,16 @@ if "logado" not in st.session_state:
 if not st.session_state.logado:
     tela_login()
     st.stop()
+# ---------------------------------------------------------
+# AUTO REFRESH (para notificações e dados)
+# ---------------------------------------------------------
+from streamlit_autorefresh import st_autorefresh
+
+st_autorefresh(interval=30 * 1000, key="auto_refresh_dashboard")
+
+# 🔓 quebra cache no refresh automático
+if "auto_refresh_dashboard" in st.session_state:
+    st.session_state["refresh_planilha"] = True
 
 # ---------------------------------------------------------
 # ESTILO (CSS) – TEMA MIDNIGHT BLUE MR
@@ -247,7 +258,7 @@ def mes_ano_ptbr_para_date(valor: str):
 
 
 @st.cache_data(ttl=60)
-def carregar_dados_planilha() -> pd.DataFrame:
+def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
     """
     Carrega e trata a base da planilha do Google Sheets.
     Cache de 5 minutos.
@@ -369,10 +380,15 @@ def carregar_dados_planilha() -> pd.DataFrame:
     return df
 
 
-# carrega a base (você vai usar no painel)
-df = carregar_dados_planilha()
+# carrega a base (BASE COMPLETA)
+df = carregar_dados_planilha(
+    _refresh_key=st.session_state.get("refresh_planilha")
+)
 
-# chama o bootstrap (ele cuida das notificações)
+# 🔔 PROCESSA NOTIFICAÇÕES (ANTES DE QUALQUER FILTRO)
+processar_eventos(df)
+
+# bootstrap do app (login, layout, etc)
 from utils.bootstrap import iniciar_app
 iniciar_app()
 

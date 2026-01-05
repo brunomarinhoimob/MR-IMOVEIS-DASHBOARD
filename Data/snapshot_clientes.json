@@ -89,7 +89,7 @@
   },
   "ALEX RICARDO DA SILVA | ": {
     "status": "VENDA GERADA",
-    "corretor": "RAYANNE"
+    "corretor": "MAGDA RAYANNE"
   },
   "TIAGO LIMA DE SOUSA | ": {
     "status": "VENDA GERADA",
@@ -294,10 +294,6 @@
   "GIZELIA SILVA DA COSTA | ": {
     "status": "EM ANÁLISE",
     "corretor": "DANIEL SOUZA"
-  },
-  "ANTONIA CLEIDE DA COSTA CIRILO | 01663830312": {
-    "status": "VENDA GERADA",
-    "corretor": "ANA RITA"
   },
   "PAULA DANIELLY SOUSA DA COSTA | ": {
     "status": "VENDA GERADA",
@@ -851,10 +847,6 @@
     "status": "EM ANÁLISE",
     "corretor": "MIKAELY LIMA"
   },
-  "MARIA TAIOMARA E JOAO BATISTA | ": {
-    "status": "EM ANÁLISE",
-    "corretor": "MAGDA RAYANNE"
-  },
   "CARLOS EDUARDO DA SILVA DOS SANTOS | ": {
     "status": "EM ANÁLISE",
     "corretor": "MAGDA RAYANNE"
@@ -1260,7 +1252,7 @@
     "corretor": "TAINA VIANA"
   },
   "LEIDIANE CARVALHO DA SILVA | ": {
-    "status": "VENDA GERADA",
+    "status": "EM ANÁLISE",
     "corretor": "FRANCISCO CELBER"
   },
   "ISAIRA DE JESUS EDUARDO | ": {
@@ -1424,7 +1416,7 @@
     "corretor": "MIKAELY LIMA"
   },
   "TATIANA ARAUJO SOUSA | ": {
-    "status": "VENDA GERADA",
+    "status": "EM ANÁLISE",
     "corretor": "MARIA DE FATIMA"
   },
   "JOSIELE DA SILVA AMARAL | ": {
@@ -1508,7 +1500,7 @@
     "corretor": "WELLIA CAMARA"
   },
   "ANTONIA CLEIDE DA COSTA CIRILO | ": {
-    "status": "VENDA GERADA",
+    "status": "EM ANÁLISE",
     "corretor": "ANA RITA"
   },
   "RICARDO DO NASCIMENTO PEREIRA | ": {
@@ -2455,6 +2447,10 @@
     "status": "EM ANÁLISE",
     "corretor": "MARCIA MATOS"
   },
+  "MARCOS ANTONIO ALVES DA SILVA | ": {
+    "status": "APROVADO",
+    "corretor": "ANA RITA"
+  },
   "RAQUEL SOARES DE ARAUJO | ": {
     "status": "APROVADO",
     "corretor": "RICARDO NASCIMENTO"
@@ -2482,10 +2478,6 @@
   "JONATHAN RUBENS PENARANDA SANTANA | ": {
     "status": "REPROVADO",
     "corretor": "MARCIA MATOS"
-  },
-  "MARCOS ANTONIO ALVES DA SILVA | ": {
-    "status": "VENDA GERADA",
-    "corretor": "ANA RITA"
   },
   "VICTOR BRUNO E CAMILA MARIA | ": {
     "status": "EM ANÁLISE",
@@ -2547,13 +2539,13 @@
     "status": "REPROVADO",
     "corretor": "MIKAELY LIMA"
   },
-  "ANTONIO FABIO ALVES MARTINS | ": {
-    "status": "APROVADO",
-    "corretor": "MIKAELY LIMA"
-  },
   "ISABELLA LEONETI DE ALMEIDA | ": {
     "status": "VENDA GERADA",
     "corretor": "MARCELLO BARBOSA"
+  },
+  "ANTONIO FABIO ALVES MARTINS | ": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
   },
   "MIKAELE PEREIRA DA SILVA | ": {
     "status": "APROVADO",
@@ -2807,6 +2799,10 @@
     "status": "APROVADO",
     "corretor": "RICARDO NASCIMENTO"
   },
+  "REDNEY FERREIRA DE SOUZA | ": {
+    "status": "VENDA GERADA",
+    "corretor": "LUANA BRAGA"
+  },
   "SABRINA DOS SANTOS SILVA | ": {
     "status": "APROVADO",
     "corretor": "JANICE ALCANTARA"
@@ -2859,10 +2855,6 @@
     "status": "REPROVADO",
     "corretor": "LUANA BRAGA"
   },
-  "REDNEY FERREIRA DE SOUZA | ": {
-    "status": "VENDA GERADA",
-    "corretor": "LUANA BRAGA"
-  },
   "BRENNA LARISSA BARROS CAVALCANTE | ": {
     "status": "APROVADO",
     "corretor": "MIKAELY LIMA"
@@ -2879,6 +2871,10 @@
     "status": "APROVADO",
     "corretor": "ALICE SILVA"
   },
+  "KELLONY MARIANO COELHO | ": {
+    "status": "VENDA GERADA",
+    "corretor": "GABRIEL BEZERRA"
+  },
   "JOSIMAR SOUSA E LEILA CRISTINE | ": {
     "status": "APROVADO",
     "corretor": "MARIA DE FATIMA"
@@ -2890,10 +2886,6 @@
   "ELANDIA MARIA BATISTA SILVERIO LOPES | ": {
     "status": "EM ANÁLISE",
     "corretor": "RYAN FERRARI"
-  },
-  "KELLONY MARIANO COELHO | ": {
-    "status": "VENDA GERADA",
-    "corretor": "GABRIEL BEZERRA"
   },
   "ANTONIO HUMBERTO ARAUJO DE SOUSA | ": {
     "status": "APROVADO",
@@ -2951,13 +2943,13 @@
     "status": "APROVADO",
     "corretor": "SAMUEL SOUTO"
   },
-  "YAGO ANTONIO E ANA BEATRIZ | ": {
-    "status": "VENDA GERADA",
-    "corretor": "IVAN JUNIOR"
-  },
   "ANTONIA LUCIA GOMES DOS SANTOS | ": {
     "status": "EM ANÁLISE",
     "corretor": "ADRIAN FERREIRA"
+  },
+  "YAGO ANTONIO E ANA BEATRIZ | ": {
+    "status": "VENDA GERADA",
+    "corretor": "IVAN JUNIOR"
   },
   "HUGO BRAYNER DE OLIVEIRA DO ROSARIO REIS | ": {
     "status": "APROVADO",
@@ -3015,13 +3007,17 @@
     "status": "EM ANÁLISE",
     "corretor": "WELLIA CAMARA"
   },
+  "MARIA GEORGIA RUFINO ROMÃO | ": {
+    "status": "APROVADO",
+    "corretor": "KATHARINA SANTANA"
+  },
   "ELIAS SOUZA DE BRITO | ": {
     "status": "VENDA GERADA",
     "corretor": "JANICE ALCANTARA"
   },
-  "MARIA GEORGIA RUFINO ROMÃO | ": {
-    "status": "APROVADO",
-    "corretor": "KATHARINA SANTANA"
+  "KETHLEY LORHAYNI DE LIMA CARNEIRO | ": {
+    "status": "VENDA GERADA",
+    "corretor": "DIEGO PINHEIRO"
   },
   "EMANUEL CESARIO BARREIRA | ": {
     "status": "APROVADO",
@@ -3030,18 +3026,6 @@
   "CARLOS ANTONIO ANDRADE BONFIM | ": {
     "status": "EM ANÁLISE",
     "corretor": "LEANDRO RODRIGUES"
-  },
-  "RODRIGO PEIXOTO DA SILVA | ": {
-    "status": "VENDA GERADA",
-    "corretor": "SAMUEL SOUTO"
-  },
-  "KETHLEY LORHAYNI DE LIMA CARNEIRO | ": {
-    "status": "VENDA GERADA",
-    "corretor": "DIEGO PINHEIRO"
-  },
-  "ANDREZA CANDIDO DE FREITAS | ": {
-    "status": "VENDA GERADA",
-    "corretor": "RYAN FERRARI"
   },
   "TEREZA GONÇALVES RIBEIRO | ": {
     "status": "REPROVADO",
@@ -3083,20 +3067,12 @@
     "status": "EM ANÁLISE",
     "corretor": "MAGDA RAYANNE"
   },
-  "THAIS CAVALCANTI MARINHO | ": {
-    "status": "REPROVADO",
-    "corretor": "MARCIA MATOS"
-  },
-  "EMANUELA DE OLIVEIRA SILVA | ": {
-    "status": "EM ANÁLISE",
-    "corretor": "MARIA DE FATIMA"
-  },
-  "SAMUEL ALMEIDA BRITO | ": {
+  "ANDREZA CANDIDO DE FREITAS | ": {
     "status": "VENDA GERADA",
-    "corretor": "MARCELLO BARBOSA"
+    "corretor": "RYAN FERRARI"
   },
-  "FERNANDA SILVA DOS SANTOS | ": {
-    "status": "DESISTIU",
+  "RODRIGO PEIXOTO DA SILVA | ": {
+    "status": "VENDA GERADA",
     "corretor": "SAMUEL SOUTO"
   },
   "ALEX SILVA MORAIS | ": {
@@ -3111,13 +3087,29 @@
     "status": "VENDA GERADA",
     "corretor": "IVAN JUNIOR"
   },
-  "VICTOR BRUNO RODRIGUES ALMEIDA | ": {
+  "THAIS CAVALCANTI MARINHO | ": {
+    "status": "REPROVADO",
+    "corretor": "MARCIA MATOS"
+  },
+  "EMANUELA DE OLIVEIRA SILVA | ": {
+    "status": "EM ANÁLISE",
+    "corretor": "MARIA DE FATIMA"
+  },
+  "FERNANDA SILVA DOS SANTOS | ": {
+    "status": "DESISTIU",
+    "corretor": "SAMUEL SOUTO"
+  },
+  "SAMUEL ALMEIDA BRITO | ": {
     "status": "VENDA GERADA",
-    "corretor": "REBEKA GONÇALVES"
+    "corretor": "MARCELLO BARBOSA"
   },
   "ITALO EVANGELISTA DA SILVA | ": {
     "status": "VENDA GERADA",
     "corretor": "MIKAEL DOUGLAS"
+  },
+  "VICTOR BRUNO RODRIGUES ALMEIDA | ": {
+    "status": "VENDA GERADA",
+    "corretor": "REBEKA GONÇALVES"
   },
   "DOUGLAS MARTINS E CLAUDENES FREITAS | ": {
     "status": "EM ANÁLISE",
@@ -3135,6 +3127,10 @@
     "status": "DESISTIU",
     "corretor": "PATRICIA SALES"
   },
+  "FRANCISCA AURILENE E TAYLANDYA DOS SANTOS | ": {
+    "status": "VENDA GERADA",
+    "corretor": "MARCIA MATOS"
+  },
   "FRANCISCO LEANDRO BALBINO PEREIRA | ": {
     "status": "APROVADO",
     "corretor": "MAGDA RAYANNE"
@@ -3150,10 +3146,6 @@
   "MAILSON MANOEL RODRIGUES DE LIMA | ": {
     "status": "APROVADO",
     "corretor": "PATRICIA SALES"
-  },
-  "FRANCISCA AURILENE E TAYLANDYA DOS SANTOS | ": {
-    "status": "VENDA GERADA",
-    "corretor": "MARCIA MATOS"
   },
   "FRANCISCO GUSTAVO GOMES DA SILVA | ": {
     "status": "APROVADO",
@@ -3251,10 +3243,6 @@
     "status": "APROVADO",
     "corretor": "KATHARINA SANTANA"
   },
-  "VITORIA FEITOSA E FRANCISCO LUAN | ": {
-    "status": "VENDA GERADA",
-    "corretor": "MIKAELY LIMA"
-  },
   "JESSIKA ALEXANDRE DE ARAUJO | ": {
     "status": "REPROVADO",
     "corretor": "PATRICIA SALES"
@@ -3282,6 +3270,10 @@
   "ALINE OLIVEIRA DA SILVA | ": {
     "status": "EM ANÁLISE",
     "corretor": "DANIEL SOUZA"
+  },
+  "VITORIA FEITOSA E FRANCISCO LUAN | ": {
+    "status": "VENDA GERADA",
+    "corretor": "MIKAELY LIMA"
   },
   "ELISANGELA LINO E CARLOS EDUARDO | ": {
     "status": "EM ANÁLISE",
@@ -3363,6 +3355,10 @@
     "status": "APROVADO",
     "corretor": "RICARDO NASCIMENTO"
   },
+  "FRANCISCO EDNARDO DE CASTRO CRUZ | ": {
+    "status": "REANÁLISE",
+    "corretor": "IVAN JUNIOR"
+  },
   "ROSANGELA DE OLIVEIRA FEITOSA | ": {
     "status": "EM ANÁLISE",
     "corretor": "MARIA DE FATIMA"
@@ -3387,9 +3383,9 @@
     "status": "REANÁLISE",
     "corretor": "PATRICIA SALES"
   },
-  "FRANCISCO EDNARDO DE CASTRO CRUZ | ": {
+  "REGISLANE PEIXOTO ROCHA | ": {
     "status": "VENDA GERADA",
-    "corretor": "IVAN JUNIOR"
+    "corretor": "MAGDA RAYANNE"
   },
   "WELVES SOARES E NATALIA FERREIRA | ": {
     "status": "APROVADO",
@@ -3410,10 +3406,6 @@
   "WEVERTON FREITAS SOUSA | ": {
     "status": "DESISTIU",
     "corretor": "MARCIA MATOS"
-  },
-  "REGISLANE PEIXOTO ROCHA | ": {
-    "status": "VENDA GERADA",
-    "corretor": "MAGDA RAYANNE"
   },
   "FLAVIA BRENA QUEIROZ BARROS | ": {
     "status": "EM ANÁLISE",
@@ -3487,6 +3479,10 @@
     "status": "APROVADO",
     "corretor": "PATRICIA SALES"
   },
+  "ROSALINE TEIXEIRA GONÇALVES | 94895864472": {
+    "status": "VENDA GERADA",
+    "corretor": "MAGDA RAYANNE"
+  },
   "ADELAIDE MACIA NASCIMENTO DA SILVA | 96901578334": {
     "status": "APROVADO",
     "corretor": "ADRIAN FERREIRA"
@@ -3518,10 +3514,6 @@
   "MICHEL DE SOUSA TORRES | ": {
     "status": "",
     "corretor": "RYAN FERRARI"
-  },
-  "ROSALINE TEIXEIRA GONÇALVES | 94895864472": {
-    "status": "VENDA GERADA",
-    "corretor": "MAGDA RAYANNE"
   },
   "NARCELIO SILVA E FRANCILENE DA SILVA | ": {
     "status": "",
@@ -3695,6 +3687,10 @@
     "status": "APROVADO",
     "corretor": "RYAN FERRARI"
   },
+  "MARIANA MATOS DUARTE | 06382848301": {
+    "status": "VENDA GERADA",
+    "corretor": "PATRICIA SALES"
+  },
   "ALINE OLIVEIRA DA SILVA | 02489250329": {
     "status": "APROVADO",
     "corretor": "DANIEL SOUZA"
@@ -3739,10 +3735,6 @@
     "status": "APROVADO",
     "corretor": "MIKAELY LIMA"
   },
-  "MARIANA MATOS DUARTE | 06382848301": {
-    "status": "VENDA GERADA",
-    "corretor": "PATRICIA SALES"
-  },
   "ANTONIO CABRAL MACEDO | 01097315495": {
     "status": "REPROVADO",
     "corretor": "FRANCISCO CELBER"
@@ -3767,13 +3759,29 @@
     "status": "VENDA GERADA",
     "corretor": "SAMUEL SOUTO"
   },
-  "JOANA DARC E EDMILSON RODRIGUES | 50756150310": {
-    "status": "REANÁLISE",
-    "corretor": "TAINA VIANA"
-  },
   "CLEITON BATISTA FARIAS | 01821984307": {
     "status": "VENDA GERADA",
     "corretor": "IVAN JUNIOR"
+  },
+  "ROGERIO RAIMUNDO DA SILVA | 75383349391": {
+    "status": "VENDA GERADA",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "TALITA DOS SANTOS SILVA | 05563018385": {
+    "status": "VENDA GERADA",
+    "corretor": "MIKAELY LIMA"
+  },
+  "RODRIGO BATISTA VIEIRA | 60003757358": {
+    "status": "VENDA GERADA",
+    "corretor": "PATRICIA SALES"
+  },
+  "FRANCISCO EVANILSON CIPRIANO LIMA | ": {
+    "status": "VENDA GERADA",
+    "corretor": "PATRICIA SALES"
+  },
+  "JOANA DARC E EDMILSON RODRIGUES | 50756150310": {
+    "status": "REANÁLISE",
+    "corretor": "TAINA VIANA"
   },
   "OZANGELA MARIA VIEIRA CAMPELO | 79685102368": {
     "status": "EM ANÁLISE",
@@ -3807,25 +3815,9 @@
     "status": "REPROVADO",
     "corretor": "ANA RITA"
   },
-  "RODRIGO BATISTA VIEIRA | 60003757358": {
-    "status": "VENDA GERADA",
-    "corretor": "PATRICIA SALES"
-  },
   "YANNE GABRIELY RODRIGUES MARQUES | 07226213370": {
     "status": "REPROVADO",
     "corretor": "MARCIA MATOS"
-  },
-  "FRANCISCO EVANILSON CIPRIANO LIMA | ": {
-    "status": "VENDA GERADA",
-    "corretor": "PATRICIA SALES"
-  },
-  "TALITA DOS SANTOS SILVA | 05563018385": {
-    "status": "VENDA GERADA",
-    "corretor": "MIKAELY LIMA"
-  },
-  "ROGERIO RAIMUNDO DA SILVA | 75383349391": {
-    "status": "VENDA GERADA",
-    "corretor": "MAGDA RAYANNE"
   },
   "DANIELE PAULO SANTOS | 00455090343": {
     "status": "",
@@ -3874,10 +3866,6 @@
   "MARIA HELISENILDA DA SILVA NUNES | 47864656315": {
     "status": "",
     "corretor": "MARIA EDUARDA"
-  },
-  "AGATA ALVES DA SILVA | 08332376327": {
-    "status": "APROVADO",
-    "corretor": "MIKAELY LIMA"
   },
   "CARLOS HENRIQUE DA SILVA SOUZA | 60380836343": {
     "status": "APROVADO",
@@ -4015,10 +4003,6 @@
     "status": "APROVADO",
     "corretor": "MARIA DE FATIMA"
   },
-  "JOSE SIDINY BARROSO LOPES FILHOS | 62854874307": {
-    "status": "APROVADO",
-    "corretor": "MAGDA RAYANNE"
-  },
   "LUIS ANTONIO SANTANA | 05480338382": {
     "status": "REPROVADO",
     "corretor": "TAINA VIANA"
@@ -4044,7 +4028,7 @@
     "corretor": "LUANA BRAGA"
   },
   "FRANCISCA MARTINS TAVEIRA | 02771516357": {
-    "status": "REANÁLISE",
+    "status": "",
     "corretor": "WELLIA CAMARA"
   },
   "MICHAEL FELIPE FERREIRA GONÇALVES | 62439529320": {
@@ -4066,6 +4050,10 @@
   "HELTON ROOSIVELT FROTA DA FONSECA | 02975195303": {
     "status": "REPROVADO",
     "corretor": "MAGDA RAYANNE"
+  },
+  "ANTONIA KATIANA SILVA DE OLIVEIRA | 01207595357": {
+    "status": "VENDA GERADA",
+    "corretor": "SAMUEL SOUTO"
   },
   "CARLOS ANTONIO ANDRADE BONFIM | 44136854315": {
     "status": "REPROVADO",
@@ -4231,13 +4219,13 @@
     "status": "",
     "corretor": "PATRICIA SALES"
   },
-  "ANTONIO CLEITON FERREIRA DA SILVA | 90800575334": {
-    "status": "REPROVADO",
-    "corretor": "JANICE ALCANTARA"
-  },
   "SAMYRA YNARA LOPES FERRER | 10125166362": {
     "status": "EM ANÁLISE",
     "corretor": "PEDRO GABRIEL"
+  },
+  "ANGELO OLIVEIRA RODRIGUES | 04215580323": {
+    "status": "APROVADO",
+    "corretor": "DJACIR SILVA"
   },
   "SABRINA DOS SANTOS SILVA | 09210729374": {
     "status": "APROVADO",
@@ -4246,10 +4234,6 @@
   "JOAO MANOEL DA SILVA ALVES | 04270729309": {
     "status": "APROVADO",
     "corretor": "PATRICIA SALES"
-  },
-  "ANA CRISTINA FELIX NOGUEIRA | 88163563320": {
-    "status": "APROVADO",
-    "corretor": "TAINA VIANA"
   },
   "ELIANE COSTA DA SILVA | 08518199310": {
     "status": "VENDA GERADA",
@@ -4328,7 +4312,7 @@
     "corretor": "MIKAELY LIMA"
   },
   "JULIANA SARA GOMES COELHO | 61412411319": {
-    "status": "REANÁLISE",
+    "status": "",
     "corretor": "WELLIA CAMARA"
   },
   "GABRIEL FELIPE DE MOURA BARROS | 60998707333": {
@@ -4344,7 +4328,7 @@
     "corretor": "PATRICIA SALES"
   },
   "JOSE MARTINS DE LIMA FILHO | 04319733347": {
-    "status": "REANÁLISE",
+    "status": "",
     "corretor": "MARIA DE FATIMA"
   },
   "MARIA EDUARDA GONÇALVES LEITE | 09827116380": {
@@ -4354,10 +4338,6 @@
   "NATALLY SOARES ROCHA | 62332962344": {
     "status": "",
     "corretor": "BRUNO MARINHO"
-  },
-  "VANESSA DUARTE DE OLIVEIRA | 04432443324": {
-    "status": "EM ANÁLISE",
-    "corretor": "PATRICIA SALES"
   },
   "GERCIANA MARTINS TAVEIRA | 60460595342": {
     "status": "EM ANÁLISE",
@@ -4371,10 +4351,6 @@
     "status": "APROVADO",
     "corretor": "PATRICIA SALES"
   },
-  "THAYANA LIMA DE ALMEIDA | 62109259361": {
-    "status": "EM ANÁLISE",
-    "corretor": "MIKAELY LIMA"
-  },
   "DAVID SOUSA ALVES | 11242468358": {
     "status": "APROVADO",
     "corretor": "IVAN JUNIOR"
@@ -4386,10 +4362,6 @@
   "ABIMAEL JACKSON CAVALCANTE DA SILVA | 63524047319": {
     "status": "APROVADO",
     "corretor": "ANA RITA"
-  },
-  "ANA CAROLINE RAMOS DE SOUSA | 60861698371": {
-    "status": "",
-    "corretor": "MIKAELY LIMA"
   },
   "MARIA JEISILENE VASCONCELOS LOURENCO | 10266164331": {
     "status": "APROVADO",
@@ -4411,36 +4383,152 @@
     "status": "APROVADO",
     "corretor": "RICARDO NASCIMENTO"
   },
-  "JOEL SIQUEIRA RODRIGUES | 07426438325": {
-    "status": "",
-    "corretor": "RICARDO NASCIMENTO"
-  },
   "WESLLEY RABELO BONFIM | 58963766349": {
-    "status": "REANÁLISE",
+    "status": "",
     "corretor": "PATRICIA SALES"
   },
-  "MARIA DE JESUS LIMA SILVA | 02783409380": {
+  "JOSE SIDINY BARROSO LOPES FILHOS | 62854874307": {
+    "status": "VENDA GERADA",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "ANA CAROLINE RAMOS DE SOUSA | 60861698371": {
+    "status": "REPROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "PEDRO LUCAS SALES MONTEIRO | 02847766375": {
     "status": "EM ANÁLISE",
+    "corretor": "DANIEL SOUZA"
+  },
+  "MARIA DE JESUS LIMA SILVA | 02783409380": {
+    "status": "APROVADO",
     "corretor": "FRANCISCO CELBER"
   },
-  "FRANCISCO DE ASSIS PEREIRA SILVA | 61700967304": {
-    "status": "EM ANÁLISE",
-    "corretor": "MARIA DE FATIMA"
+  "FABRICIO DA SILVA XIMENES | 60645786373": {
+    "status": "APROVADO",
+    "corretor": "IVAN JUNIOR"
   },
-  "CLIENTE TESTE | ": {
-    "status": "EM ANÁLISE",
-    "corretor": "LUANA BRAGA"
+  "VANESSA DUARTE DE OLIVEIRA | 04432443324": {
+    "status": "REPROVADO",
+    "corretor": "PATRICIA SALES"
+  },
+  "JOEL SIQUEIRA RODRIGUES | 07426438325": {
+    "status": "REPROVADO",
+    "corretor": "RICARDO NASCIMENTO"
+  },
+  "MARIA TAIOMARA E JOAO BATISTA | ": {
+    "status": "APROVADO",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "FRANCISCO ADEMILTON SILVA LIMA | 62725874300": {
+    "status": "APROVADO",
+    "corretor": "MARCIA MATOS"
+  },
+  "RAISSA DE SOUSA FARIAS | 08880313355": {
+    "status": "REPROVADO",
+    "corretor": "IVAN JUNIOR"
+  },
+  "ADRIANO ARAUJO DO NASCIMENTO | 05822113362": {
+    "status": "REPROVADO",
+    "corretor": "WELLIA CAMARA"
+  },
+  "THAYANA LIMA DE ALMEIDA | 62109259361": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
   },
   "ISABEL CRISTINA DOS SANTOS | 56166508387": {
+    "status": "",
+    "corretor": "SAMUEL SOUTO"
+  },
+  "MARIA ELIZABETE LOURENÇO | 45792038368": {
+    "status": "DESISTIU",
+    "corretor": "MARIA DE FATIMA"
+  },
+  "JOHNY INACIO DA SILVA | 03322465314": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "FRANCIANE DA SILVA SOUSA | 02952767386": {
+    "status": "APROVADO",
+    "corretor": "WELLIA CAMARA"
+  },
+  "FRANCISCO DE ASSIS PEREIRA SILVA | 61700967304": {
+    "status": "REPROVADO",
+    "corretor": "MARIA DE FATIMA"
+  },
+  "LEONARDO GOMES DA SILVA | 00321551311": {
+    "status": "REPROVADO",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "JULIANA VITORIA OLIVEIRA LHAMAS | 61860229352": {
+    "status": "APROVADO",
+    "corretor": "IVAN JUNIOR"
+  },
+  "JOAN DE SOUZA PEREIRA | 07218152350": {
+    "status": "REPROVADO",
+    "corretor": "MIKAEL DOUGLAS"
+  },
+  "ANDERSON DA SILVA SANTOS | 06957041336": {
     "status": "EM ANÁLISE",
-    "corretor": "SAMUEL SOUTO"
+    "corretor": "LEANDRO RODRIGUES"
   },
-  "ANGELO OLIVEIRA RODRIGUES | 04215580323": {
-    "status": "VENDA GERADA",
-    "corretor": "DJACIR SILVA"
+  "LAIRCE FARIAS DE SOUSA | 63383155307": {
+    "status": "APROVADO",
+    "corretor": "MAGDA RAYANNE"
   },
-  "ANTONIA KATIANA SILVA DE OLIVEIRA | 01207595357": {
-    "status": "VENDA GERADA",
-    "corretor": "SAMUEL SOUTO"
+  "LUCAS TARGINO DA CRUZ | 10216598354": {
+    "status": "APROVADO",
+    "corretor": "ALICE SILVA"
+  },
+  "ANA CRISTINA FELIX NOGUEIRA | 88163563320": {
+    "status": "APROVADO",
+    "corretor": "TAINA VIANA"
+  },
+  "GISLANE DE LIMA | 61806638312": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "YARA PREREIRA GUEDES | 07398464347": {
+    "status": "APROVADO",
+    "corretor": "RICARDO NASCIMENTO"
+  },
+  "FELIPE MIRANDA NASSAR | 92192505272": {
+    "status": "APROVADO",
+    "corretor": "PATRICIA SALES"
+  },
+  "NATANAEL BELARMINO PEREIRA | 09518438340": {
+    "status": "EM ANÁLISE",
+    "corretor": "ANA RITA"
+  },
+  "MARCIO ANDERSON FERREIRA DOS SANTOS | 05522953373": {
+    "status": "",
+    "corretor": "DANIEL SOUZA"
+  },
+  "AGATA ALVES DA SILVA | 08332376327": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "JEANNINE WILKAR RAMALHO DA SILVA | 44736843349": {
+    "status": "EM ANÁLISE",
+    "corretor": "ARNOLD LENAR"
+  },
+  "ANTONIO CLEITON FERREIRA DA SILVA | 90800575334": {
+    "status": "EM ANÁLISE",
+    "corretor": "JANICE ALCANTARA"
+  },
+  "FRANCISCO LUCAS BRAGA DE QUEIROZ | 66245214300": {
+    "status": "EM ANÁLISE",
+    "corretor": "PATRICIA SALES"
+  },
+  "NAIONARA LOPES DOS SANTOS | 04080671369": {
+    "status": "APROVADO",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "ROBSON FERREIRA DE OLIVEIRA | 77412842315": {
+    "status": "EM ANÁLISE",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "GERDEAN ALVES DE LIMA | 03698613379": {
+    "status": "EM ANÁLISE",
+    "corretor": "WELLIA CAMARA"
   }
 }

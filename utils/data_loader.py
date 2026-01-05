@@ -1,9 +1,12 @@
+import streamlit as st
 import pandas as pd
 
 # =========================================================
 # CARREGAMENTO DA PLANILHA (SEM QUALQUER FILTRO)
 # =========================================================
-def carregar_dados_planilha() -> pd.DataFrame:
+@st.cache_data(ttl=60)
+def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
+
     """
     Lê a planilha INTEIRA, sem filtros de data, mês ou base.
     Qualquer filtro deve ser feito SOMENTE nas páginas.

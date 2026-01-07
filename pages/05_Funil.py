@@ -356,6 +356,21 @@ elif tipo_periodo == "DATA_BASE" and bases_selecionadas:
 if df_painel.empty:
     st.warning("Sem dados para os filtros selecionados.")
     st.stop()
+# ---------------------------------------------------------
+# 🔒 TRAVA DE SEGURANÇA — CORRETOR VÊ APENAS O PRÓPRIO FUNIL
+# ---------------------------------------------------------
+if perfil == "corretor":
+    if "CORRETOR" in df_painel.columns:
+        df_painel = df_painel[
+            df_painel["CORRETOR"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            == st.session_state.get("nome_usuario", "").upper().strip()
+        ]
+
+    # força a visão para Corretor (ignora sidebar)
+    visao = "Corretor"
 
 # Visão por equipe/corretor
 if visao == "Equipe":

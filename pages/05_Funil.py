@@ -23,6 +23,8 @@ st_autorefresh(interval=30 * 1000, key="auto_refresh_funil")
 # BOOTSTRAP (LOGIN + NOTIFICAÇÕES)
 # ---------------------------------------------------------
 iniciar_app()
+perfil = st.session_state.get("perfil")
+nome_usuario = st.session_state.get("nome_usuario", "").upper().strip()
 
 # ---------------------------------------------------------
 # FUNÇÕES AUXILIARES

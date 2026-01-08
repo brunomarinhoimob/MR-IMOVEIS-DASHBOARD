@@ -6,12 +6,8 @@ from datetime import date, timedelta
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
-# ---------------------------------------------------------
-# BLOQUEIO DE PERFIL CORRETOR
-# ---------------------------------------------------------
-if st.session_state.get("perfil") == "corretor":
-    st.warning("🔒 Você não tem permissão para acessar esta página.")
-    st.stop()
+perfil = str(st.session_state.get("perfil", "")).lower().strip()
+nome_usuario = str(st.session_state.get("nome_usuario", "")).upper().strip()
 
 # ---------------------------------------------------------
 # CONFIGURAÇÃO DA PÁGINA
@@ -337,6 +333,23 @@ if not bases_selecionadas:
 
 mask_db = df["DATA_BASE_LABEL"].isin(bases_selecionadas)
 df_periodo = df[mask_db].copy()
+# ---------------------------------------------------------
+# 🔒 TRAVA — CORRETOR VÊ APENAS OS PRÓPRIOS NÚMEROS
+# (MESMA LÓGICA DA PÁGINA FUNIL)
+# ---------------------------------------------------------
+if perfil == "corretor" and nome_usuario:
+    if "CORRETOR" in df_periodo.columns:
+        df_periodo = df_periodo[
+            df_periodo["CORRETOR"]
+            .astype(str)
+            .str.upper()
+            .str.strip()
+            == nome_usuario
+        ].copy()
+
+    # força selects e visão
+    corretor_sel = nome_usuario
+    equipe_sel = "Todas"
 
 if df_periodo.empty:
     st.info("Não há movimentações para as DATA BASE selecionadas.")
@@ -382,16 +395,35 @@ lista_corretor = (
     else []
 )
 
-equipe_sel = st.sidebar.selectbox(
-    "Equipe",
-    options=["Todas"] + lista_equipe,
-    index=0,
-)
+if perfil == "corretor" and nome_usuario:
+    equipe_sel = "Todas"
+    corretor_sel = nome_usuario
 
-corretor_sel = st.sidebar.selectbox(
-    "Corretor",
-    options=["Todos"] + lista_corretor,
-)
+    st.sidebar.selectbox(
+        "Equipe",
+        options=["Todas"],
+        index=0,
+        disabled=True,
+    )
+
+    st.sidebar.selectbox(
+        "Corretor",
+        options=[nome_usuario],
+        index=0,
+        disabled=True,
+    )
+else:
+    equipe_sel = st.sidebar.selectbox(
+        "Equipe",
+        options=["Todas"] + lista_equipe,
+        index=0,
+    )
+
+    corretor_sel = st.sidebar.selectbox(
+        "Corretor",
+        options=["Todos"] + lista_corretor,
+    )
+
 
 # Meta de vendas (qtde) – slider (iniciando em 30)
 meta_vendas = st.sidebar.slider(

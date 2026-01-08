@@ -3487,10 +3487,6 @@
     "status": "APROVADO",
     "corretor": "ADRIAN FERREIRA"
   },
-  "FRANCISCA JANAINA MORAIS VIANA | 04476187331": {
-    "status": "APROVADO",
-    "corretor": "RICARDO NASCIMENTO"
-  },
   "MACILON COSTA E ROSA MARIA | ": {
     "status": "APROVADO",
     "corretor": "MAGDA RAYANNE"
@@ -3550,10 +3546,6 @@
   "ISABELE CRISTINE DIAS COSTA | 07991599302": {
     "status": "APROVADO",
     "corretor": "ANA RITA"
-  },
-  "KELTON YURI VASCONCELOS BARROSO | ": {
-    "status": "VENDA INFORMADA",
-    "corretor": "KATHARINA SANTANA"
   },
   "FRANCISCA JULIANA E CLEITON SOARES | 05314908310": {
     "status": "APROVADO",
@@ -4028,7 +4020,7 @@
     "corretor": "LUANA BRAGA"
   },
   "FRANCISCA MARTINS TAVEIRA | 02771516357": {
-    "status": "",
+    "status": "REANÁLISE",
     "corretor": "WELLIA CAMARA"
   },
   "MICHAEL FELIPE FERREIRA GONÇALVES | 62439529320": {
@@ -4090,10 +4082,6 @@
   "MARIA ADELIA MOREIRA ALVES | 12706253738": {
     "status": "",
     "corretor": "MARCIA MATOS"
-  },
-  "ANTONIA JOYCE BARBOSA SENA | 06450215399": {
-    "status": "REPROVADO",
-    "corretor": "LEANDRO RODRIGUES"
   },
   "RENATO FONTENELE DE MELO | 00833813331": {
     "status": "APROVADO",
@@ -4315,10 +4303,6 @@
     "status": "",
     "corretor": "WELLIA CAMARA"
   },
-  "GABRIEL FELIPE DE MOURA BARROS | 60998707333": {
-    "status": "REPROVADO",
-    "corretor": "SAMUEL SOUTO"
-  },
   "WILLIANE DOS SANTOS LIMA | 05944747366": {
     "status": "",
     "corretor": "PATRICIA SALES"
@@ -4507,28 +4491,180 @@
     "status": "APROVADO",
     "corretor": "MIKAELY LIMA"
   },
-  "JEANNINE WILKAR RAMALHO DA SILVA | 44736843349": {
-    "status": "EM ANÁLISE",
-    "corretor": "ARNOLD LENAR"
-  },
-  "ANTONIO CLEITON FERREIRA DA SILVA | 90800575334": {
-    "status": "EM ANÁLISE",
-    "corretor": "JANICE ALCANTARA"
-  },
-  "FRANCISCO LUCAS BRAGA DE QUEIROZ | 66245214300": {
-    "status": "EM ANÁLISE",
-    "corretor": "PATRICIA SALES"
-  },
   "NAIONARA LOPES DOS SANTOS | 04080671369": {
     "status": "APROVADO",
     "corretor": "MAGDA RAYANNE"
   },
-  "ROBSON FERREIRA DE OLIVEIRA | 77412842315": {
-    "status": "EM ANÁLISE",
-    "corretor": "MAGDA RAYANNE"
-  },
-  "GERDEAN ALVES DE LIMA | 03698613379": {
+  "TESTE | ": {
     "status": "EM ANÁLISE",
     "corretor": "WELLIA CAMARA"
+  },
+  "ANTONIO CLEITON FERREIRA DA SILVA | 90800575334": {
+    "status": "REPROVADO",
+    "corretor": "JANICE ALCANTARA"
+  },
+  "ROBSON FERREIRA DE OLIVEIRA | 77412842315": {
+    "status": "APROVADO",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "FRANCISCO NATANAEL COSTA DA SILVA | 07162347347": {
+    "status": "EM ANÁLISE",
+    "corretor": "FRANCISCO CELBER"
+  },
+  "FRANCISCO ANTONIO SOARES DE OLIVEIRA | 01414363362": {
+    "status": "EM ANÁLISE",
+    "corretor": "ANA RITA"
+  },
+  "ANDERSON RODRIGUES ABREU | 07266922399": {
+    "status": "APROVADO",
+    "corretor": "MARCIA MATOS"
+  },
+  "GERDEAN ALVES DE LIMA | 03698613379": {
+    "status": "APROVADO",
+    "corretor": "WELLIA CAMARA"
+  },
+  "FRANCISCO LUCAS BRAGA DE QUEIROZ | 66245214300": {
+    "status": "APROVADO",
+    "corretor": "PATRICIA SALES"
+  },
+  "PAULA LETICIA DOS SANTOS ALMEIDA | 07305173304": {
+    "status": "EM ANÁLISE",
+    "corretor": "LEANDRO RODRIGUES"
+  },
+  "ROMANA RODRIGUES ANDRADE REIS | 08055039356": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "ANTONIA JOYCE BARBOSA SENA | 06450215399": {
+    "status": "EM ANÁLISE",
+    "corretor": "LEANDRO RODRIGUES"
+  },
+  "MARIA ALINE GOMES DE OLIVEIRA | 08155273300": {
+    "status": "EM ANÁLISE",
+    "corretor": "RICARDO NASCIMENTO"
+  },
+  "ANA LIZIA CHAVES DA SILVA LIMA | 07625971350": {
+    "status": "APROVADO",
+    "corretor": "ANA RITA"
+  },
+  "ERIKA DA SILVA BEZERRA | 03727821329": {
+    "status": "EM ANÁLISE",
+    "corretor": "MARIA DE FATIMA"
+  },
+  "GABRYEL MOREIRA SOARES | 62778766359": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "FRANCISCO CRISTIANO SIQUEIRA DE SOUSA | 01544147350": {
+    "status": "EM ANÁLISE",
+    "corretor": "WELLIA CAMARA"
+  },
+  "MARIA LUCILENE ROCHA LOPES | 00655092340": {
+    "status": "APROVADO",
+    "corretor": "RAYANE PONTES"
+  },
+  "ANTONIA JULIA ABREU BARBOSA | 04548509305": {
+    "status": "EM ANÁLISE",
+    "corretor": "ALICE SILVA"
+  },
+  "NAYARA PAULINO DA SILVA | 05017863338": {
+    "status": "EM ANÁLISE",
+    "corretor": "BRUNO MARINHO"
+  },
+  "EDUARDO GABRIEL QUINTO PALHETA | 06693123392": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "FRANCISCA JANAINA MORAIS VIANA | 04476187331": {
+    "status": "EM ANÁLISE",
+    "corretor": "RICARDO NASCIMENTO"
+  },
+  "DANIELLE FONTELES ALBERTO | 02613789379": {
+    "status": "APROVADO",
+    "corretor": "MAGDA RAYANNE"
+  },
+  "ERINEUDA FERREIRA BORGES | 36009873304": {
+    "status": "EM ANÁLISE",
+    "corretor": "LUANA BRAGA"
+  },
+  "ANTONIO OTON DE ALMEIDA MELO FILHO | 02447055340": {
+    "status": "APROVADO",
+    "corretor": "GABRIEL BEZERRA"
+  },
+  "FRANCI REGIA RIBEIRO GERMANO CUNHA | 04002891305": {
+    "status": "EM ANÁLISE",
+    "corretor": "MARCELLO BARBOSA"
+  },
+  "MARIA CLARA MOREIRA BONFIM | 03401256327": {
+    "status": "EM ANÁLISE",
+    "corretor": "LEANDRO RODRIGUES"
+  },
+  "ANTONIO CABRAL DE MACEDO | 01097315495": {
+    "status": "EM ANÁLISE",
+    "corretor": "LEANDRO RODRIGUES"
+  },
+  "MARIA GERLANE SOUSA ALMEIDA | 02369241330": {
+    "status": "EM ANÁLISE",
+    "corretor": "FRANCISCO CELBER"
+  },
+  "PEDRO IGOR PACHECO DA SILVA DIAS | 60878864350": {
+    "status": "APROVADO",
+    "corretor": "RAYANE PONTES"
+  },
+  "FABIO DOUGLAS SILVA LOIOLA | 09597111390": {
+    "status": "EM ANÁLISE",
+    "corretor": "RICARDO NASCIMENTO"
+  },
+  "THALITA LIMA BARBOSA | 61860705308": {
+    "status": "EM ANÁLISE",
+    "corretor": "MIKAELY LIMA"
+  },
+  "GLEISA MARIA DA SILVA GERONIMO ALVES | 60727548301": {
+    "status": "EM ANÁLISE",
+    "corretor": "LEANDRO RODRIGUES"
+  },
+  "GECIANE DE SOUSA NASCIMENTO | 06216011367": {
+    "status": "EM ANÁLISE",
+    "corretor": "GABRIEL BEZERRA"
+  },
+  "VICTOR ERIKES DA COSTA CONCEIÇAO | 63073092374": {
+    "status": "EM ANÁLISE",
+    "corretor": "MARCELLO BARBOSA"
+  },
+  "GABRIEL FELIPE DE MOURA BARROS | 60998707333": {
+    "status": "EM ANÁLISE",
+    "corretor": "SAMUEL SOUTO"
+  },
+  "MARIA NAIARA OLIVEIRA GOMES | 04323135327": {
+    "status": "REPROVADO",
+    "corretor": "EDUARDA ROCHA"
+  },
+  "JEANNINE WILKAR RAMALHO DA SILVA | 44736843349": {
+    "status": "",
+    "corretor": "ARNOLD LENAR"
+  },
+  "HITALLO DE SOUSA BEZERRA | 61458066304": {
+    "status": "REPROVADO",
+    "corretor": "JANICE ALCANTARA"
+  },
+  "ISABEL CRISTINA DOS SANTOS SILVA | 56166508387": {
+    "status": "",
+    "corretor": "SAMUEL SOUTO"
+  },
+  "HENRIQUE JORGE DA SILVA FILHO | 61635047390": {
+    "status": "APROVADO",
+    "corretor": "MIKAELY LIMA"
+  },
+  "FRANCISCO EDNARDO DA SILVA BEZERRA | 63587181349": {
+    "status": "APROVADO",
+    "corretor": "IVAN JUNIOR"
+  },
+  "MANOEL MARCIO DAMASCENO | 95666591304": {
+    "status": "",
+    "corretor": "IVAN JUNIOR"
+  },
+  "NÃO INFORMADO | ": {
+    "status": "",
+    "corretor": "NÃO INFORMADO"
   }
 }

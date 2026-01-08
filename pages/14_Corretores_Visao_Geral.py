@@ -2,15 +2,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, date
+from fpdf import FPDF
+
+
 if "logado" not in st.session_state or not st.session_state.logado:
     st.warning("🔒 Acesso restrito. Faça login para continuar.")
     st.stop()
 # ---------------------------------------------------------
-# BLOQUEIO DE PERFIL CORRETOR
+# PERFIL / USUÁRIO (para trava de acesso)
 # ---------------------------------------------------------
-if st.session_state.get("perfil") == "corretor":
-    st.warning("🔒 Você não tem permissão para acessar esta página.")
-    st.stop()
+perfil = str(st.session_state.get("perfil", "")).lower().strip()
+nome_usuario = str(st.session_state.get("nome_usuario", "")).upper().strip()
 
 # ---------------------------------------------------------
 # CONFIG PÁGINA
@@ -45,6 +47,48 @@ def format_currency(valor: float) -> str:
     if pd.isna(valor):
         valor = 0
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+def limpar_texto_pdf(texto):
+    if pd.isna(texto):
+        return ""
+    return (
+        str(texto)
+        .encode("latin-1", errors="ignore")
+        .decode("latin-1")
+    )
+
+
+def gerar_pdf(df_pdf):
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=10)
+
+    linhas_por_pagina = 33
+    col_nome = 70
+    col_tel = 40
+    col_obs = 80
+
+    for i in range(0, len(df_pdf), linhas_por_pagina):
+        pdf.add_page()
+        pdf.set_font("Arial", "B", 10)
+
+        pdf.cell(col_nome, 8, "NOME", border=1)
+        pdf.cell(col_tel, 8, "TELEFONE", border=1)
+        pdf.cell(col_obs, 8, "INFORMAÇÕES", border=1)
+        pdf.ln()
+
+        pdf.set_font("Arial", size=9)
+
+        bloco = df_pdf.iloc[i:i + linhas_por_pagina]
+
+        for _, row in bloco.iterrows():
+            nome = limpar_texto_pdf(row["NOME"])
+            telefone = limpar_texto_pdf(row["TELEFONE"])
+
+            pdf.cell(col_nome, 8, nome[:40], border=1)
+            pdf.cell(col_tel, 8, telefone[:20], border=1)
+            pdf.cell(col_obs, 8, "", border=1)
+            pdf.ln()
+
+    return bytes(pdf.output(dest="S"))
 
 
 # ---------------------------------------------------------
@@ -298,6 +342,24 @@ corretores_ativos_crm = (
 corretores_ativos = sorted(
     [c for c in corretores_ativos_crm if c not in ["SEM CORRETOR"]]
 )
+# ---------------------------------------------------------
+# 🔒 TRAVA — CORRETOR VÊ APENAS OS PRÓPRIOS NÚMEROS
+# ---------------------------------------------------------
+if perfil == "corretor" and nome_usuario:
+    # força lista de corretores para apenas ele
+    corretores_ativos = [nome_usuario]
+
+    # filtra planilha para o corretor logado
+    if "CORRETOR" in df_planilha.columns:
+        df_planilha = df_planilha[
+            df_planilha["CORRETOR"].astype(str).str.upper().str.strip() == nome_usuario
+        ].copy()
+
+    # filtra CRM (se existir)
+    if "CORRETOR_CRM" in df_leads.columns:
+        df_leads = df_leads[
+            df_leads["CORRETOR_CRM"].astype(str).str.upper().str.strip() == nome_usuario
+        ].copy()
 
 # ---------------------------------------------------------
 # FILTROS DE PERÍODO – PLANILHA E CRM
@@ -313,6 +375,43 @@ if not df_leads.empty and "DATA_CAPTURA_DT" in df_leads.columns:
     ].copy()
 else:
     df_leads_periodo = pd.DataFrame()
+# ---------------------------------------------------------
+# NORMALIZA CAMPOS DO CRM (MESMA LÓGICA DA OFERTA ATIVA)
+# ---------------------------------------------------------
+if not df_leads_periodo.empty:
+    df_leads_periodo["NOME"] = (
+        df_leads_periodo.get("nome_pessoa", "")
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df_leads_periodo["TELEFONE"] = (
+        df_leads_periodo.get("telefone_pessoa", "")
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+# ---------------------------------------------------------
+# NORMALIZA CAMPOS DO CRM (MESMA LÓGICA DA OFERTA ATIVA)
+# ---------------------------------------------------------
+if not df_leads_periodo.empty:
+    df_leads_periodo["NOME"] = (
+        df_leads_periodo.get("nome_pessoa", "")
+        .fillna("")
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+
+    df_leads_periodo["TELEFONE"] = (
+        df_leads_periodo.get("telefone_pessoa", "")
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
 
 # ---------------------------------------------------------
 st.subheader("1️⃣ Corretores ativos no CRM (base para os KPIs)")
@@ -690,11 +789,19 @@ st.dataframe(
 # ---------------------------------------------------------
 st.subheader("6️⃣ Detalhe de um corretor (opcional)")
 
-corretor_sel = st.selectbox(
-    "Selecione um corretor para ver o detalhe:",
-    options=[""] + corretores_ativos,
-    index=0,
-)
+if perfil == "corretor" and nome_usuario:
+    corretor_sel = st.selectbox(
+        "Selecione um corretor para ver o detalhe:",
+        options=[nome_usuario],
+        index=0,
+        disabled=True,
+    )
+else:
+    corretor_sel = st.selectbox(
+        "Selecione um corretor para ver o detalhe:",
+        options=[""] + corretores_ativos,
+        index=0,
+    )
 
 if corretor_sel:
     linha = df_exibe[df_exibe["CORRETOR"] == corretor_sel].iloc[0]
@@ -704,6 +811,76 @@ if corretor_sel:
     c2.metric("Análises", int(linha.get("ANALISES", 0)))
     c3.metric("Aprovações", int(linha.get("APROVACOES", 0)))
     c4.metric("Reprovações", int(linha.get("REPROVACOES", 0)))
+# ---------------------------------------------------------
+# PDF DE LEADS DO CORRETOR (mesmo período do filtro)
+# ---------------------------------------------------------
+df_leads_do_corretor = pd.DataFrame()
+
+if not df_leads_periodo.empty and "CORRETOR_CRM" in df_leads_periodo.columns:
+    df_leads_do_corretor = df_leads_periodo[
+        df_leads_periodo["CORRETOR_CRM"].astype(str).str.upper().str.strip() == corretor_sel
+    ].copy()
+if not corretor_sel:
+
+    st.info("Selecione um corretor acima para gerar o PDF de leads.")
+if corretor_sel:
+    with c1:
+        if df_leads_do_corretor.empty:
+            st.caption("Sem leads do CRM no período.")
+        else:
+            df_pdf = pd.DataFrame({
+                "NOME": df_leads_do_corretor["NOME"].fillna("").astype(str).str.upper().str.strip(),
+                "TELEFONE": df_leads_do_corretor["TELEFONE"].fillna("").astype(str).str.strip(),
+                "INFORMAÇÕES": ""
+            })
+
+            pdf_bytes = gerar_pdf(df_pdf)
+
+            st.download_button(
+                label="📄 Gerar PDF de Leads",
+                data=pdf_bytes,
+                file_name=f"leads_{corretor_sel.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+            )
+
+ 
+    # ---------------------------------------------------------
+    # BOTÃO: GERAR PDF DOS LEADS (CRM) DO CORRETOR NO PERÍODO
+    # - usa df_leads_periodo (já filtrado por data_ini/data_fim)
+    # - filtra por CORRETOR_CRM == corretor_sel
+    # - PDF com 3 colunas: NOME | TELEFONE | INFORMAÇÕES (vazia)
+    # ---------------------------------------------------------
+    df_leads_do_corretor = pd.DataFrame()
+    if "CORRETOR_CRM" in df_leads_periodo.columns and not df_leads_periodo.empty:
+        df_leads_do_corretor = df_leads_periodo[
+            df_leads_periodo["CORRETOR_CRM"].astype(str).str.upper().str.strip() == corretor_sel
+        ].copy()
+
+    # tenta achar colunas de nome e telefone no df_leads (sem achismo: só varredura por nomes comuns)
+    col_nome_lead = get_col(["nome", "nome_lead", "nome_cliente", "cliente", "lead"])
+    col_tel_lead = get_col(["telefone", "celular", "fone", "whatsapp", "phone"])
+
+    with c1:
+        if df_leads_do_corretor.empty:
+            st.caption("Sem leads do CRM no período para gerar PDF.")
+        elif not col_nome_lead or not col_tel_lead:
+            st.caption("Não encontrei colunas de NOME/TELEFONE no retorno do CRM.")
+        else:
+            df_pdf = pd.DataFrame({
+                "NOME": df_leads_do_corretor[col_nome_lead].fillna("").astype(str).str.upper().str.strip(),
+                "TELEFONE": df_leads_do_corretor[col_tel_lead].fillna("").astype(str).str.strip(),
+                "INFORMAÇÕES": ""
+            })
+
+            titulo_pdf = f"LEADS - {corretor_sel} ({data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')})"
+            pdf_buffer = gerar_pdf_leads_tabela(df_pdf, titulo_pdf)
+
+            st.download_button(
+                "Gerar PDF de Leads",
+                data=pdf_buffer,
+                file_name=f"leads_{corretor_sel.replace(' ', '_')}_{data_ini.strftime('%d%m%Y')}_{data_fim.strftime('%d%m%Y')}.pdf",
+                mime="application/pdf",
+            )
 
     c5, c6, c7 = st.columns(3)
     c5.metric("Vendas", int(linha.get("VENDAS", 0)))

@@ -246,6 +246,18 @@ dia_selecionado = st.sidebar.date_input(
     min_value=data_min,
     max_value=data_max,
 )
+# ---------------------------------------------------------
+# META DO DIA
+# ---------------------------------------------------------
+st.sidebar.markdown("### 🎯 Meta do dia")
+
+META_DIA = st.sidebar.number_input(
+    "Meta de análises",
+    min_value=1,
+    max_value=200,
+    value=15,
+    step=1
+)
 
 # ---------------------------------------------------------
 # FILTRAR BASE PARA O DIA
@@ -254,6 +266,8 @@ df_dia = df[df["DIA"] == dia_selecionado].copy()
 df_em_analise = df_dia[df_dia["STATUS_BASE"] == "EM ANÁLISE"]
 
 total_analises = len(df_em_analise)
+meta_batida = total_analises >= META_DIA
+faltam_meta = max(META_DIA - total_analises, 0)
 
 # ---------------------------------------------------------
 # CABEÇALHO
@@ -282,6 +296,55 @@ with col_top_right:
     except Exception:
         pass
 
+    # -----------------------------------------------------
+    # CARD DE META (ANTES / DEPOIS)
+    # -----------------------------------------------------
+    if meta_batida:
+        st.markdown(
+            f"""
+            <div style="
+                margin-top: 12px;
+                background: linear-gradient(135deg, #15803d, #22c55e);
+                padding: 16px;
+                border-radius: 18px;
+                text-align: center;
+                box-shadow: 0 0 28px rgba(34,197,94,0.6);
+            ">
+                <div style="font-size:1.15rem; font-weight:700; color:white;">
+                    🎉 META BATIDA
+                </div>
+                <div style="font-size:0.95rem; margin-top:6px; color:white;">
+                    {total_analises} / {META_DIA} análises
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f"""
+            <div style="
+                margin-top: 12px;
+                background: #0b1220;
+                padding: 14px;
+                border-radius: 18px;
+                text-align: center;
+                border: 1px solid #1f2937;
+            ">
+                <div style="font-size:1rem; font-weight:600; color:#e5e7eb;">
+                    🎯 Meta do dia
+                </div>
+                <div style="font-size:0.9rem; margin-top:6px; color:#9ca3af;">
+                    {total_analises} / {META_DIA} análises
+                </div>
+                <div style="font-size:0.85rem; margin-top:4px; color:#38bdf8;">
+                    Faltam {faltam_meta}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 # ---------------------------------------------------------
 # CASO NÃO TENHA ANÁLISES NO DIA
 # ---------------------------------------------------------
@@ -296,6 +359,27 @@ if total_analises == 0:
         unsafe_allow_html=True,
     )
     st.stop()
+# ---------------------------------------------------------
+# MENSAGEM DE META BATIDA (FAIXA HORIZONTAL)
+# ---------------------------------------------------------
+if meta_batida:
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(90deg, #14532d, #22c55e, #14532d);
+            padding: 14px 18px;
+            border-radius: 14px;
+            margin-bottom: 1.2rem;
+            box-shadow: 0 0 30px rgba(34,197,94,0.55);
+        ">
+            <span style="font-size:1rem; color:white; font-weight:600;">
+                🎉 <strong>META BATIDA!</strong> Parabéns, time!  
+                A meta de <strong>{META_DIA}</strong> análises foi alcançada hoje.
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ---------------------------------------------------------
 # MÉTRICAS PRINCIPAIS

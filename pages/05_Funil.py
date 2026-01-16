@@ -507,81 +507,113 @@ with col8:
 
 
 # ---------------------------------------------------------
-# ÚLTIMOS 3 MESES (HISTÓRICO)
+# ÚLTIMAS 3 DATA BASE (HISTÓRICO – MÊS COMERCIAL)
 # ---------------------------------------------------------
 st.markdown("---")
-st.markdown("## 📌 Histórico (Últimos 3 meses)")
+st.markdown("## 📌 Histórico (Últimas 3 DATA BASE)")
 
-data_max = df_global["DIA"].max()
-data_min_3m = (data_max - pd.Timedelta(days=90)) if pd.notnull(data_max) else None
+# -------------------------------------------------
+# IDENTIFICA AS ÚLTIMAS 3 DATA BASE VÁLIDAS
+# -------------------------------------------------
+bases_validas = (
+    df_global["DATA_BASE"]
+    .dropna()
+    .sort_values()
+    .unique()
+)
 
-if data_min_3m is None:
-    st.warning("Sem data válida para calcular últimos 3 meses.")
+if len(bases_validas) == 0:
+    st.warning("Sem DATA BASE válida para cálculo do histórico.")
+    st.stop()
+
+# -------------------------------------------------
+# REMOVE A DATA BASE ATUAL E PEGA AS 3 ANTERIORES
+# -------------------------------------------------
+if len(bases_validas) < 4:
+    st.warning("Não há DATA BASE suficientes para calcular histórico (mínimo 4).")
+    st.stop()
+
+base_atual = bases_validas[-1]          # ex: jan/2026
+ultimas_3_bases = bases_validas[-4:-1]  # ex: out, nov, dez/2025
+
+# filtra base global pelas 3 DATA BASE
+df_3m = df_global[df_global["DATA_BASE"].isin(ultimas_3_bases)].copy()
+
+# reaplica filtros de visão (Equipe / Corretor)
+if visao == "Equipe":
+    if "equipe_sel" in locals() and equipe_sel and "EQUIPE" in df_3m.columns:
+        df_3m = df_3m[df_3m["EQUIPE"].astype(str) == str(equipe_sel)]
+
+elif visao == "Corretor":
+    if "equipe_sel" in locals() and equipe_sel and "EQUIPE" in df_3m.columns:
+        df_3m = df_3m[df_3m["EQUIPE"].astype(str) == str(equipe_sel)]
+    if "corretor_sel" in locals() and corretor_sel and "CORRETOR" in df_3m.columns:
+        df_3m = df_3m[df_3m["CORRETOR"].astype(str) == str(corretor_sel)]
+
+# -------------------------------------------------
+# CÁLCULOS DO FUNIL (3 DATA BASE)
+# -------------------------------------------------
+status_3m = df_3m["STATUS_BASE"]
+
+analises_em_3m = conta_analises_base(status_3m)
+analises_total_3m = conta_analises_total(status_3m)
+aprovacoes_3m = conta_aprovacoes(status_3m)
+
+# vendas únicas (GERADAS)
+df_vendas_3m = obter_vendas_unicas(
+    df_3m,
+    status_venda=["VENDA GERADA"],
+    status_final_map=status_final_por_cliente
+)
+vendas_3m = len(df_vendas_3m)
+
+df_vendas_3m = garantir_coluna_vgv(df_vendas_3m)
+vgv_3m = df_vendas_3m["VGV"].sum() if vendas_3m > 0 else 0
+
+# corretores ativos
+if visao == "Corretor":
+    corretores_ativos_3m = 1
 else:
-    df_3m = df_global[(df_global["DIA"] >= data_min_3m) & (df_global["DIA"] <= data_max)].copy()
-
-    if visao == "Equipe":
-        if "EQUIPE" in df_3m.columns and "EQUIPE" in df_painel.columns:
-            # usa mesma seleção de equipe do painel se existir
-            if "equipe_sel" in locals() and equipe_sel:
-                df_3m = df_3m[df_3m["EQUIPE"].astype(str) == str(equipe_sel)]
-    elif visao == "Corretor":
-        if "equipe_sel" in locals() and equipe_sel and "EQUIPE" in df_3m.columns:
-            df_3m = df_3m[df_3m["EQUIPE"].astype(str) == str(equipe_sel)]
-        if "corretor_sel" in locals() and corretor_sel and "CORRETOR" in df_3m.columns:
-            df_3m = df_3m[df_3m["CORRETOR"].astype(str) == str(corretor_sel)]
-
-    status_3m = df_3m["STATUS_BASE"]
-    analises_em_3m = conta_analises_base(status_3m)
-    analises_total_3m = conta_analises_total(status_3m)
-    aprovacoes_3m = conta_aprovacoes(status_3m)
-
-    # VENDAS ÚNICAS (APENAS GERADAS)
-    df_vendas_3m = obter_vendas_unicas(
-        df_3m,
-        status_venda=["VENDA GERADA"],
-        status_final_map=status_final_por_cliente
+    corretores_ativos_3m = (
+        df_3m["CORRETOR"].dropna().astype(str).nunique()
+        if "CORRETOR" in df_3m.columns else 0
     )
-    vendas_3m = len(df_vendas_3m)
-    df_vendas_3m = garantir_coluna_vgv(df_vendas_3m)
-    vgv_3m = df_vendas_3m["VGV"].sum() if vendas_3m > 0 else 0
 
-    # Corretores
-    if visao == "Corretor":
-        corretores_ativos_3m = 1  # visão individual
-    else:
-        corretores_ativos_3m = df_3m["CORRETOR"].dropna().astype(str).nunique() if "CORRETOR" in df_3m.columns else 0
+ipc_3m = (vendas_3m / corretores_ativos_3m) if corretores_ativos_3m > 0 else 0
 
-    ipc_3m = (vendas_3m / corretores_ativos_3m) if corretores_ativos_3m > 0 else 0
+# médias por venda (planejamento)
+if vendas_3m > 0:
+    analises_por_venda = analises_em_3m / vendas_3m if analises_em_3m > 0 else 0
+    aprov_por_venda = aprovacoes_3m / vendas_3m if aprovacoes_3m > 0 else 0
+else:
+    analises_por_venda = 0
+    aprov_por_venda = 0
 
-    # Médias por venda (para planejamento)
-    if vendas_3m > 0:
-        analises_por_venda = analises_em_3m / vendas_3m if analises_em_3m > 0 else 0
-        aprov_por_venda = aprovacoes_3m / vendas_3m if aprovacoes_3m > 0 else 0
-    else:
-        analises_por_venda = 0
-        aprov_por_venda = 0
+# -------------------------------------------------
+# EXIBIÇÃO
+# -------------------------------------------------
+labels_bases = [pd.to_datetime(b).strftime("%m/%Y") for b in ultimas_3_bases]
+st.caption(f"DATA BASE consideradas: {', '.join(labels_bases)}")
 
-    # ----------------- EXIBIÇÃO -----------------------
-    st.markdown("### 📌 Indicadores do Funil (Últimos 3 Meses)")
+st.markdown("### 📌 Indicadores do Funil (3 DATA BASE)")
 
-    colH1, colH2, colH3, colH4 = st.columns(4)
-    with colH1:
-        st.metric("Análises (EM)", analises_em_3m)
-    with colH2:
-        st.metric("Aprovações", aprovacoes_3m)
-    with colH3:
-        st.metric("Vendas (GERADAS)", vendas_3m)
-    with colH4:
-        st.metric("IPC (3m)", f"{ipc_3m:.2f}")
+colH1, colH2, colH3, colH4 = st.columns(4)
+with colH1:
+    st.metric("Análises (EM)", analises_em_3m)
+with colH2:
+    st.metric("Aprovações", aprovacoes_3m)
+with colH3:
+    st.metric("Vendas (GERADAS)", vendas_3m)
+with colH4:
+    st.metric("IPC (3 bases)", f"{ipc_3m:.2f}")
 
-    colH5, colH6, colH7 = st.columns(3)
-    with colH5:
-        st.metric("Análises por venda (3m)", f"{analises_por_venda:.2f}")
-    with colH6:
-        st.metric("Aprovações por venda (3m)", f"{aprov_por_venda:.2f}")
-    with colH7:
-        st.metric("VGV (3m)", format_currency(vgv_3m))
+colH5, colH6, colH7 = st.columns(3)
+with colH5:
+    st.metric("Análises por venda", f"{analises_por_venda:.2f}")
+with colH6:
+    st.metric("Aprovações por venda", f"{aprov_por_venda:.2f}")
+with colH7:
+    st.metric("VGV (3 bases)", format_currency(vgv_3m))
 
 # -------------------------------------------------------------------
 # A PARTIR DAQUI, SEU ARQUIVO ORIGINAL SEGUE (sem mexer no resto).

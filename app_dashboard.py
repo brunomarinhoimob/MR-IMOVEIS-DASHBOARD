@@ -329,7 +329,7 @@ def carregar_dados_planilha(_refresh_key=None) -> pd.DataFrame:
         s = df[col_situacao].fillna("").astype(str).str.upper()
         df.loc[s.str.contains("EM ANÁLISE"), "STATUS_BASE"] = "EM ANÁLISE"
         df.loc[s.str.contains("REANÁLISE"), "STATUS_BASE"] = "REANÁLISE"
-        df.loc[s.str.contains("APROV"), "STATUS_BASE"] = "APROVADO"
+        df.loc[s.str.strip() == "APROVAÇÃO", "STATUS_BASE"] = "APROVADO"
         df.loc[s.str.contains("REPROV"), "STATUS_BASE"] = "REPROVADO"
         df.loc[s.str.contains("VENDA GERADA"), "STATUS_BASE"] = "VENDA GERADA"
         df.loc[s.str.contains("VENDA INFORMADA"), "STATUS_BASE"] = "VENDA INFORMADA"
